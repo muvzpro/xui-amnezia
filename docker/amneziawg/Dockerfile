@@ -1,18 +1,27 @@
-# Alternative Dockerfile based on official amneziavpn/amneziawg-go image
-# This adds iptables-legacy fallback and custom entrypoint support
+FROM golang:1.24.4-alpine AS builder
 
-FROM amneziavpn/amneziawg-go:latest
+RUN apk add --no-cache git
+WORKDIR /src
+RUN git clone --depth 1 https://github.com/amnezia-vpn/amneziawg-go.git .
+RUN go mod download \
+  && go mod verify \
+  && CGO_ENABLED=0 go build -ldflags="-s -w" -o /out/amneziawg-go
 
-USER root
+FROM alpine:3.19
 
-# Install iptables-legacy fallback for Alpine compatibility
-RUN apk add --no-cache iptables-legacy \
+ARG AWGTOOLS_RELEASE="1.0.20250901"
+
+RUN apk add --no-cache bash curl iproute2 iptables iptables-legacy unzip \
+  && cd /usr/bin \
+  && curl -fL -o amneziawg-tools.zip "https://github.com/amnezia-vpn/amneziawg-tools/releases/download/v${AWGTOOLS_RELEASE}/alpine-3.19-amneziawg-tools.zip" \
+  && unzip -j amneziawg-tools.zip \
+  && rm -f amneziawg-tools.zip \
+  && chmod +x /usr/bin/awg /usr/bin/awg-quick \
+  && ln -sf /usr/bin/awg /usr/bin/wg \
+  && ln -sf /usr/bin/awg-quick /usr/bin/wg-quick \
   && ln -sf /usr/sbin/iptables-legacy /usr/sbin/iptables 2>/dev/null || true
 
-# Ensure config directory exists
-RUN mkdir -p /etc/amnezia/amneziawg
+COPY --from=builder /out/amneziawg-go /usr/bin/amneziawg-go
 
+ENV WG_QUICK_USERSPACE_IMPLEMENTATION=amneziawg-go
 WORKDIR /etc/amnezia/amneziawg
-
-# Default: keep the original entrypoint from base image
-# Override via docker-compose or command line if needed
