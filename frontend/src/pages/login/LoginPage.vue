@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { UserOutlined, LockOutlined, KeyOutlined, SettingOutlined } from '@ant-design/icons-vue';
 
@@ -9,8 +9,7 @@ import {
   currentTheme,
   theme as themeState,
 } from '@/composables/useTheme.js';
-
-const ThemeSwitchLogin = defineAsyncComponent(() => import('@/components/ThemeSwitchLogin.vue'));
+import ThemeSwitchLogin from '@/components/ThemeSwitchLogin.vue';
 
 const { t } = useI18n();
 

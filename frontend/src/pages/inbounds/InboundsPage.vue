@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineAsyncComponent, onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Modal, message } from 'ant-design-vue';
 import {
@@ -18,16 +18,15 @@ import AppSidebar from '@/components/AppSidebar.vue';
 import CustomStatistic from '@/components/CustomStatistic.vue';
 import { useNodeList } from '@/composables/useNodeList.js';
 import InboundList from './InboundList.vue';
+import InboundFormModal from './InboundFormModal.vue';
+import ClientFormModal from './ClientFormModal.vue';
+import ClientBulkModal from './ClientBulkModal.vue';
+import InboundInfoModal from './InboundInfoModal.vue';
+import QrCodeModal from './QrCodeModal.vue';
+import TextModal from '@/components/TextModal.vue';
+import PromptModal from '@/components/PromptModal.vue';
 import { useInbounds } from './useInbounds.js';
 import { useWebSocket } from '@/composables/useWebSocket.js';
-
-const InboundFormModal = defineAsyncComponent(() => import('./InboundFormModal.vue'));
-const ClientFormModal = defineAsyncComponent(() => import('./ClientFormModal.vue'));
-const ClientBulkModal = defineAsyncComponent(() => import('./ClientBulkModal.vue'));
-const InboundInfoModal = defineAsyncComponent(() => import('./InboundInfoModal.vue'));
-const QrCodeModal = defineAsyncComponent(() => import('./QrCodeModal.vue'));
-const TextModal = defineAsyncComponent(() => import('@/components/TextModal.vue'));
-const PromptModal = defineAsyncComponent(() => import('@/components/PromptModal.vue'));
 
 const { t } = useI18n();
 
@@ -50,6 +49,7 @@ const {
   applyTrafficEvent,
   applyClientStatsEvent,
   applyInvalidate,
+  applyInboundsEvent,
 } = useInbounds();
 
 // Live updates over WebSocket — replaces the old 5s polling loop.
@@ -60,6 +60,7 @@ useWebSocket({
   traffic: applyTrafficEvent,
   client_stats: applyClientStatsEvent,
   invalidate: applyInvalidate,
+  inbounds: applyInboundsEvent,
 });
 const { isMobile } = useMediaQuery();
 // Node list lives on the central panel; the Inbounds page consumes
@@ -606,11 +607,11 @@ function onRowAction({ key, dbInbound }) {
               <!-- Inbound list — toolbar, search/filter, columns, row actions -->
               <a-col :span="24">
                 <InboundList :db-inbounds="dbInbounds" :client-count="clientCount" :online-clients="onlineClients"
-                  :last-online-map="lastOnlineMap" :is-dark-theme="themeState.isDark"
-                  :expire-diff="expireDiff" :traffic-diff="trafficDiff" :page-size="pageSize" :is-mobile="isMobile"
-                  :sub-enable="subSettings.enable" :nodes-by-id="nodesById" @refresh="refresh" @add-inbound="onAddInbound"
-                  @general-action="onGeneralAction" @row-action="onRowAction" @edit-client="onEditClient"
-                  @qrcode-client="onQrcodeClient" @info-client="onInfoClient"
+                  :last-online-map="lastOnlineMap" :is-dark-theme="themeState.isDark" :expire-diff="expireDiff"
+                  :traffic-diff="trafficDiff" :page-size="pageSize" :is-mobile="isMobile"
+                  :sub-enable="subSettings.enable" :nodes-by-id="nodesById" @refresh="refresh"
+                  @add-inbound="onAddInbound" @general-action="onGeneralAction" @row-action="onRowAction"
+                  @edit-client="onEditClient" @qrcode-client="onQrcodeClient" @info-client="onInfoClient"
                   @reset-traffic-client="onResetTrafficClient" @delete-client="onDeleteClient"
                   @toggle-enable-client="onToggleEnableClient" />
               </a-col>

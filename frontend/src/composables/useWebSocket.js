@@ -24,7 +24,7 @@ function getSharedClient() {
 //   useWebSocket({
 //     traffic: (payload) => applyTrafficEvent(payload),
 //     client_stats: (payload) => applyClientStatsEvent(payload),
-//     invalidate: ({ dataType }) => { if (dataType === 'inbounds') refresh(); },
+//     invalidate: ({ type }) => { if (type === 'inbounds') refresh(); },
 //   });
 //
 // Built-in lifecycle events ('connected' / 'disconnected' / 'error')
