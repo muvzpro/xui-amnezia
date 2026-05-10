@@ -78,10 +78,24 @@ func (s *AmneziaService) CreateServer(server *model.AmneziaServer) (*model.Amnez
         return nil, errors.New("listen port is required")
     }
     if server.Address == "" {
-        return nil, errors.New("address is required")
+        server.Address = "10.0.0.1/24" // Default subnet
     }
     if server.DNS == "" {
         server.DNS = "8.8.4.4"
+    }
+    if server.ServerType == "" {
+        server.ServerType = "local" // Default: local server
+    }
+    
+    // Auto-detect endpoint if enabled
+    if server.AutoEndpoint && server.Endpoint == "" {
+        endpoint, err := s.GetPublicEndpoint(server)
+        if err != nil {
+            // Log warning but don't fail - user can set manually
+            fmt.Printf("Warning: failed to auto-detect endpoint: %v\n", err)
+        } else {
+            server.Endpoint = endpoint
+        }
     }
 
     db := database.GetDB()
@@ -180,6 +194,19 @@ func (s *AmneziaService) CreatePeer(peer *model.AmneziaPeer) (*model.AmneziaPeer
     if peer.PersistentKeepalive == 0 {
         peer.PersistentKeepalive = DefaultPeerKeepalive
     }
+    
+    // Auto-assign IP address if not provided
+    if peer.Address == "" {
+        server, err := s.GetServer(peer.ServerID)
+        if err != nil {
+            return nil, fmt.Errorf("failed to get server: %w", err)
+        }
+        peer.Address, err = s.GetNextPeerIP(server)
+        if err != nil {
+            return nil, fmt.Errorf("failed to assign IP: %w", err)
+        }
+    }
+    
     // Calculate expires_at from expiry_days
     peer.ExpiresAt = s.CalculatePeerExpiry(peer.ExpiryDays)
     // Clear pause fields on creation
@@ -277,7 +304,11 @@ func (s *AmneziaService) GetPeerConfig(peerId int) (string, error) {
     }
 
     if peer.Address == "" {
-        peer.Address = "10.0.0.2/32"
+        // Auto-assign IP if not set
+        peer.Address, err = s.GetNextPeerIP(server)
+        if err != nil {
+            peer.Address = "10.0.0.2/32" // Fallback
+        }
     }
 
     // Parse obfuscation parameters from server
@@ -859,4 +890,125 @@ func (s *AmneziaService) GetPeerVPNURICode(peerId int) (string, error) {
         return "", err
     }
     return "data:image/png;base64," + base64.StdEncoding.EncodeToString(png), nil
+}
+
+// GetNextPeerIP assigns the next available IP address for a peer
+// based on the server's subnet configuration
+func (s *AmneziaService) GetNextPeerIP(server *model.AmneziaServer) (string, error) {
+    // Parse server address to get subnet
+    // Format: 10.0.0.1/24 or 192.168.1.1/24
+    serverAddr := server.Address
+    if serverAddr == "" {
+        serverAddr = "10.0.0.1/24" // Default
+    }
+    
+    // Extract network portion
+    parts := strings.Split(serverAddr, "/")
+    if len(parts) != 2 {
+        return "", fmt.Errorf("invalid server address format: %s", serverAddr)
+    }
+    
+    serverIP := parts[0]
+    cidr := parts[1]
+    
+    // Get all existing peers for this server
+    peers, err := s.GetPeers(server.Id)
+    if err != nil {
+        return "", fmt.Errorf("failed to get peers: %w", err)
+    }
+    
+    // Build map of used IPs
+    usedIPs := make(map[string]bool)
+    usedIPs[serverIP] = true // Server IP is reserved
+    
+    for _, peer := range peers {
+        if peer.Address != "" {
+            // Extract IP from peer.Address (format: 10.0.0.2/32)
+            peerIP := strings.Split(peer.Address, "/")[0]
+            usedIPs[peerIP] = true
+        }
+    }
+    
+    // Generate next available IP based on CIDR
+    // For /24 subnet: 10.0.0.1 is server, peers start from 10.0.0.2
+    ipParts := strings.Split(serverIP, ".")
+    if len(ipParts) != 4 {
+        return "", fmt.Errorf("invalid IPv4 address: %s", serverIP)
+    }
+    
+    // Get the base (first 3 octets)
+    base := strings.Join(ipParts[:3], ".")
+    
+    // Find next available IP (start from 2, skip server at 1)
+    var lastOctet int
+    fmt.Sscanf(ipParts[3], "%d", &lastOctet)
+    
+    // Determine max based on CIDR
+    maxIP := 254
+    if cidr == "/24" {
+        maxIP = 254
+    } else if cidr == "/25" {
+        maxIP = 126
+    } else if cidr == "/26" {
+        maxIP = 62
+    } else if cidr == "/27" {
+        maxIP = 30
+    } else if cidr == "/28" {
+        maxIP = 14
+    }
+    
+    // Find next available IP
+    for i := 2; i <= maxIP; i++ {
+        candidate := fmt.Sprintf("%s.%d", base, i)
+        if !usedIPs[candidate] {
+            return candidate + "/32", nil
+        }
+    }
+    
+    return "", fmt.Errorf("no available IP addresses in subnet %s", serverAddr)
+}
+
+// GetPublicEndpoint returns the public IP/domain and port for the server
+// If AutoEndpoint is enabled, it attempts to detect the public IP
+func (s *AmneziaService) GetPublicEndpoint(server *model.AmneziaServer) (string, error) {
+    // If endpoint is already set and not auto-detect, use it
+    if server.Endpoint != "" && !server.AutoEndpoint {
+        return server.Endpoint, nil
+    }
+    
+    // Try to get public IP
+    publicIP, err := s.getPublicIP()
+    if err != nil {
+        // If we can't get public IP, use the server's address as fallback
+        if server.Address != "" {
+            ip := strings.Split(server.Address, "/")[0]
+            return fmt.Sprintf("%s:%d", ip, server.ListenPort), nil
+        }
+        return "", fmt.Errorf("failed to get public IP: %w", err)
+    }
+    
+    return fmt.Sprintf("%s:%d", publicIP, server.ListenPort), nil
+}
+
+// getPublicIP attempts to get the server's public IP address
+func (s *AmneziaService) getPublicIP() (string, error) {
+    // Try multiple services for redundancy
+    services := []string{
+        "https://api.ipify.org",
+        "https://ifconfig.me",
+        "https://icanhazip.com",
+    }
+    
+    for _, service := range services {
+        cmd := exec.Command("curl", "-s", "-4", "--connect-timeout", "5", service)
+        output, err := cmd.Output()
+        if err == nil {
+            ip := strings.TrimSpace(string(output))
+            if ip != "" && len(ip) < 16 { // Basic validation
+                return ip, nil
+            }
+        }
+    }
+    
+    return "", fmt.Errorf("failed to get public IP from any service")
 }

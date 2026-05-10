@@ -727,6 +727,7 @@ show_status() {
             ;;
     esac
     show_xray_status
+    show_amnezia_status
 }
 
 show_enable_status() {
@@ -754,6 +755,103 @@ show_xray_status() {
     else
         echo -e "xray state: ${red}Not Running${plain}"
     fi
+}
+
+check_amnezia_status() {
+    # Check if amneziawg-go binary exists
+    if [[ ! -f /usr/local/bin/amneziawg-go ]]; then
+        return 2  # Not installed
+    fi
+    
+    # Check if any amneziawg interface is running
+    if ip link show 2>/dev/null | grep -q "awg[0-9]"; then
+        return 0  # Running
+    fi
+    
+    # Check systemd service
+    if systemctl is-active --quiet amneziawg@* 2>/dev/null; then
+        return 0  # Running
+    fi
+    
+    return 1  # Not running
+}
+
+show_amnezia_status() {
+    check_amnezia_status
+    case $? in
+        0)
+            # Get active interfaces
+            local interfaces=$(ip link show 2>/dev/null | grep -oE "awg[0-9]+" | sort -u | tr '\n' ' ')
+            if [[ -n "$interfaces" ]]; then
+                echo -e "amnezia state: ${green}Running${plain} (${interfaces})"
+            else
+                echo -e "amnezia state: ${green}Running${plain}"
+            fi
+            ;;
+        1)
+            echo -e "amnezia state: ${yellow}Not Running${plain}"
+            ;;
+        2)
+            echo -e "amnezia state: ${red}Not Installed${plain}"
+            ;;
+    esac
+}
+
+amnezia_menu() {
+    echo -e "${green}\t1.${plain} List AmneziaWG Servers"
+    echo -e "${green}\t2.${plain} Start AmneziaWG Server"
+    echo -e "${green}\t3.${plain} Stop AmneziaWG Server"
+    echo -e "${green}\t4.${plain} Restart AmneziaWG Server"
+    echo -e "${green}\t5.${plain} Show AmneziaWG Status"
+    echo -e "${green}\t0.${plain} Back to Main Menu"
+    read -rp "Choose an option: " choice
+    
+    case "$choice" in
+        0)
+            show_menu
+            ;;
+        1)
+            echo -e "${green}AmneziaWG Servers:${plain}"
+            awg show interfaces 2>/dev/null || echo -e "${yellow}No active interfaces${plain}"
+            amnezia_menu
+            ;;
+        2)
+            read -rp "Enter interface name (e.g., awg0): " iface
+            if [[ -n "$iface" ]]; then
+                systemctl start amneziawg@$iface 2>/dev/null || awg-quick up $iface 2>/dev/null
+                echo -e "${green}Started $iface${plain}"
+            fi
+            amnezia_menu
+            ;;
+        3)
+            read -rp "Enter interface name (e.g., awg0): " iface
+            if [[ -n "$iface" ]]; then
+                systemctl stop amneziawg@$iface 2>/dev/null || awg-quick down $iface 2>/dev/null
+                echo -e "${yellow}Stopped $iface${plain}"
+            fi
+            amnezia_menu
+            ;;
+        4)
+            read -rp "Enter interface name (e.g., awg0): " iface
+            if [[ -n "$iface" ]]; then
+                systemctl restart amneziawg@$iface 2>/dev/null || { awg-quick down $iface 2>/dev/null; awg-quick up $iface 2>/dev/null; }
+                echo -e "${green}Restarted $iface${plain}"
+            fi
+            amnezia_menu
+            ;;
+        5)
+            echo -e "${green}AmneziaWG Status:${plain}"
+            awg show 2>/dev/null || echo -e "${yellow}No active interfaces${plain}"
+            echo ""
+            echo -e "${green}Installed interfaces:${plain}"
+            ls -la /etc/amnezia/amneziawg/ 2>/dev/null || echo -e "${yellow}No config directory found${plain}"
+            amnezia_menu
+            ;;
+        *)
+            echo -e "${red}Invalid option. Please select a valid number.${plain}"
+            amnezia_menu
+            ;;
+    esac
 }
 
 firewall_menu() {
@@ -2260,6 +2358,7 @@ show_usage() {
 │  ${blue}x-ui disable${plain}               - Disable Autostart on OS Startup  │
 │  ${blue}x-ui log${plain}                   - Check logs                       │
 │  ${blue}x-ui banlog${plain}                - Check Fail2ban ban logs          │
+│  ${blue}x-ui amnezia${plain}               - AmneziaWG Management             │
 │  ${blue}x-ui update${plain}                - Update                           │
 │  ${blue}x-ui update-all-geofiles${plain}   - Update all geo files             │
 │  ${blue}x-ui legacy${plain}                - Legacy version                   │
@@ -2305,10 +2404,11 @@ show_menu() {
 │  ${green}24.${plain} Enable BBR                                │
 │  ${green}25.${plain} Update Geo Files                          │
 │  ${green}26.${plain} Speedtest by Ookla                        │
+│  ${green}27.${plain} AmneziaWG Management                      │
 ╚────────────────────────────────────────────────╝
 "
     show_status
-    echo && read -rp "Please enter your selection [0-26]: " num
+    echo && read -rp "Please enter your selection [0-27]: " num
 
     case "${num}" in
         0)
@@ -2392,8 +2492,11 @@ show_menu() {
         26)
             run_speedtest
             ;;
+        27)
+            amnezia_menu
+            ;;
         *)
-            LOGE "Please enter the correct number [0-26]"
+            LOGE "Please enter the correct number [0-27]"
             ;;
     esac
 }
@@ -2429,6 +2532,9 @@ if [[ $# > 0 ]]; then
             ;;
         "banlog")
             check_install 0 && show_banlog 0
+            ;;
+        "amnezia")
+            amnezia_menu
             ;;
         "update")
             check_install 0 && update 0

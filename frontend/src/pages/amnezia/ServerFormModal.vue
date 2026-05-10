@@ -22,6 +22,8 @@ const form = ref({
   dns: '8.8.4.4',
   mtu: 1280,
   endpoint: '',
+  serverType: 'local',
+  autoEndpoint: true,
   protocolMode: 'AmneziaWG',
   obfuscationJson: '{}',
   enabled: true,
@@ -82,6 +84,8 @@ function resetForm() {
       dns: '8.8.4.4',
       mtu: 1280,
       endpoint: '',
+      serverType: 'local',
+      autoEndpoint: true,
       protocolMode: 'AmneziaWG',
       obfuscationJson: '{}',
       enabled: true,
@@ -184,8 +188,25 @@ function generateHeaderRange() {
       </a-form-item>
 
       <a-form-item :label="t('amnezia.endpoint')">
-        <a-input v-model:value="form.endpoint" placeholder="example.com:51820" />
+        <a-input v-model:value="form.endpoint" :placeholder="t('amnezia.endpointPlaceholder')" :disabled="form.autoEndpoint" />
       </a-form-item>
+
+      <a-row :gutter="16">
+        <a-col :span="12">
+          <a-form-item :label="t('amnezia.serverType')">
+            <a-select v-model:value="form.serverType">
+              <a-select-option value="local">{{ t('amnezia.localServer') }}</a-select-option>
+              <a-select-option value="remote">{{ t('amnezia.remoteServer') }}</a-select-option>
+            </a-select>
+          </a-form-item>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item :label="t('amnezia.autoEndpoint')">
+            <a-switch v-model:checked="form.autoEndpoint" />
+            <span style="margin-left: 8px; color: #888; font-size: 12px">{{ t('amnezia.autoEndpointHint') }}</span>
+          </a-form-item>
+        </a-col>
+      </a-row>
 
       <a-form-item :label="t('amnezia.protocolMode')">
         <a-select v-model:value="form.protocolMode">

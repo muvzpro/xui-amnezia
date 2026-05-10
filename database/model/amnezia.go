@@ -14,6 +14,8 @@ type AmneziaServer struct {
 	MTU             int           `json:"mtu" form:"mtu"`
 	ProtocolMode    string        `json:"protocolMode" form:"protocolMode"`
 	ObfuscationJSON string        `json:"obfuscationJson" form:"obfuscationJson" gorm:"type:text"`
+	ServerType      string        `json:"serverType" form:"serverType" gorm:"default:'local'"` // local or remote
+	AutoEndpoint    bool          `json:"autoEndpoint" form:"autoEndpoint" gorm:"default:true"`
 	Enabled         bool          `json:"enabled" form:"enabled" gorm:"index"`
 	CreatedAt       int64         `json:"createdAt" gorm:"autoCreateTime"`
 	UpdatedAt       int64         `json:"updatedAt" gorm:"autoUpdateTime"`
