@@ -432,7 +432,7 @@ setup_amnezia_config() {
     local wg_port=$(shuf -i 1024-62000 -n 1)
     
     # Generate random network for AmneziaWG
-    local wg_network="10.$(shuf -i 0-255 -n 1).$(shuf -i 0-255 -n 1).0"
+    local wg_network="10.$(shuf -i 0-255 -n 1).$(shuf -i 0-255 -n 1)"
     
     # Generate obfuscation parameters for AmneziaWG 2.0
     local obf_params=$(generate_obfuscation_params)
