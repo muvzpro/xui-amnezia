@@ -358,10 +358,11 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-Environment=WG_QUICK_USERSPACE_IMPLEMENTATION=/usr/local/bin/amneziawg-go
-ExecStart=/usr/local/bin/awg-quick up /etc/amnezia/amneziawg/%i.conf
-ExecStop=/usr/local/bin/awg-quick down /etc/amnezia/amneziawg/%i.conf
-ExecReload=/bin/bash -c '/usr/local/bin/awg-quick down /etc/amnezia/amneziawg/%i.conf; /usr/local/bin/awg-quick up /etc/amnezia/amneziawg/%i.conf'
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=WG_QUICK_USERSPACE_IMPLEMENTATION=amneziawg-go
+ExecStart=/bin/sh -c 'exec awg-quick up /etc/amnezia/amneziawg/%i.conf'
+ExecStop=/bin/sh -c 'exec awg-quick down /etc/amnezia/amneziawg/%i.conf'
+ExecReload=/bin/sh -c 'awg-quick down /etc/amnezia/amneziawg/%i.conf || true; exec awg-quick up /etc/amnezia/amneziawg/%i.conf'
 
 [Install]
 WantedBy=multi-user.target

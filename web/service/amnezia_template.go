@@ -83,9 +83,6 @@ const serverConfigTmpl = `# AmneziaWG Server Configuration
 PrivateKey = {{.PrivateKey}}
 Address = {{.Address}}
 ListenPort = {{.ListenPort}}
-{{- if .DNS}}
-DNS = {{.DNS}}
-{{- end}}
 {{- if .MTU}}
 MTU = {{.MTU}}
 {{- end}}

@@ -151,9 +151,6 @@ func (s *AmneziaService) ensureSystemdTemplate() error {
 	if _, err := exec.LookPath("systemctl"); err != nil {
 		return nil
 	}
-	if _, err := os.Stat(amneziaSystemdUnitPath); err == nil {
-		return nil
-	}
 	unit := `[Unit]
 Description=AmneziaWG interface %i
 After=network-online.target
@@ -162,14 +159,18 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-Environment=WG_QUICK_USERSPACE_IMPLEMENTATION=/usr/local/bin/amneziawg-go
-ExecStart=/usr/local/bin/awg-quick up /etc/amnezia/amneziawg/%i.conf
-ExecStop=/usr/local/bin/awg-quick down /etc/amnezia/amneziawg/%i.conf
-ExecReload=/bin/bash -c '/usr/local/bin/awg-quick down /etc/amnezia/amneziawg/%i.conf; /usr/local/bin/awg-quick up /etc/amnezia/amneziawg/%i.conf'
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=WG_QUICK_USERSPACE_IMPLEMENTATION=amneziawg-go
+ExecStart=/bin/sh -c 'exec awg-quick up /etc/amnezia/amneziawg/%i.conf'
+ExecStop=/bin/sh -c 'exec awg-quick down /etc/amnezia/amneziawg/%i.conf'
+ExecReload=/bin/sh -c 'awg-quick down /etc/amnezia/amneziawg/%i.conf || true; exec awg-quick up /etc/amnezia/amneziawg/%i.conf'
 
 [Install]
 WantedBy=multi-user.target
 `
+	if current, err := os.ReadFile(amneziaSystemdUnitPath); err == nil && string(current) == unit {
+		return nil
+	}
 	if err := os.WriteFile(amneziaSystemdUnitPath, []byte(unit), 0644); err != nil {
 		return err
 	}
@@ -305,6 +306,11 @@ func (s *AmneziaService) DeleteServer(id int) error {
 		return err
 	}
 	_ = s.systemctlAction("stop", server.InterfaceName)
+	_ = s.systemctlAction("disable", server.InterfaceName)
+	configPath := filepath.Join(amneziaConfigDir, fmt.Sprintf("%s.conf", server.InterfaceName))
+	if err := os.Remove(configPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove AmneziaWG config %s: %w", configPath, err)
+	}
 	if err := db.Delete(&model.AmneziaPeer{}, "server_id = ?", id).Error; err != nil {
 		return err
 	}
@@ -314,7 +320,6 @@ func (s *AmneziaService) DeleteServer(id int) error {
 		}
 		return err
 	}
-	_ = os.Remove(filepath.Join(amneziaConfigDir, fmt.Sprintf("%s.conf", server.InterfaceName)))
 	return nil
 }
 

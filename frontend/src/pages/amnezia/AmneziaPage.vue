@@ -125,20 +125,11 @@ function onEditServer(server) {
 }
 
 async function onDeleteServer(server) {
-  Modal.confirm({
-    title: t('amnezia.deleteServer'),
-    content: `${server.name} (${server.interfaceName})`,
-    okText: t('delete'),
-    okType: 'danger',
-    cancelText: t('cancel'),
-    onOk: async () => {
-      const msg = await HttpUtil.delete(`/panel/api/amnezia/servers/${server.id}`);
-      if (msg?.success) {
-        message.success(t('amnezia.toasts.serverDeleted'));
-        await fetchServers();
-      }
-    },
-  });
+  const msg = await HttpUtil.delete(`/panel/api/amnezia/servers/${server.id}`);
+  if (msg?.success) {
+    message.success(t('amnezia.toasts.serverDeleted'));
+    await fetchServers();
+  }
 }
 
 async function onSaveServer(payload) {
@@ -198,20 +189,11 @@ function onEditPeer(peer) {
 }
 
 async function onDeletePeer(peer) {
-  Modal.confirm({
-    title: t('amnezia.deletePeer'),
-    content: peer.name,
-    okText: t('delete'),
-    okType: 'danger',
-    cancelText: t('cancel'),
-    onOk: async () => {
-      const msg = await HttpUtil.delete(`/panel/api/amnezia/peers/${peer.id}`);
-      if (msg?.success) {
-        message.success(t('amnezia.toasts.peerDeleted'));
-        await fetchServers();
-      }
-    },
-  });
+  const msg = await HttpUtil.delete(`/panel/api/amnezia/peers/${peer.id}`);
+  if (msg?.success) {
+    message.success(t('amnezia.toasts.peerDeleted'));
+    await fetchServers();
+  }
 }
 
 async function onSavePeer(payload) {
@@ -464,8 +446,8 @@ const selectedServer = computed(() => servers.value.find(server => server.id ===
                               <ReloadOutlined />
                             </a-button>
                           </a-tooltip>
-                          <a-popconfirm :title="t('amnezia.deleteServer')" @confirm="onDeleteServer(record)">
-                            <a-button size="small" danger>
+                          <a-popconfirm :title="`${t('amnezia.deleteServer')}: ${record.name}`" @confirm="onDeleteServer(record)">
+                            <a-button size="small" danger @click.stop>
                               <DeleteOutlined />
                             </a-button>
                           </a-popconfirm>
@@ -552,8 +534,8 @@ const selectedServer = computed(() => servers.value.find(server => server.id ===
                               <LinkOutlined />
                             </a-button>
                           </a-tooltip>
-                          <a-popconfirm :title="t('amnezia.deletePeer')" @confirm="onDeletePeer(record)">
-                            <a-button size="small" danger>
+                          <a-popconfirm :title="`${t('amnezia.deletePeer')}: ${record.name}`" @confirm="onDeletePeer(record)">
+                            <a-button size="small" danger @click.stop>
                               <DeleteOutlined />
                             </a-button>
                           </a-popconfirm>

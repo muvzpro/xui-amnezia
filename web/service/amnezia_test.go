@@ -224,8 +224,8 @@ func TestGenerateServerConfig(t *testing.T) {
 		t.Error("Config should contain server address")
 	}
 
-	if !contains(config, "DNS = 8.8.4.4") {
-		t.Error("Config should contain DNS")
+	if contains(config, "DNS = 8.8.4.4") {
+		t.Error("Server config should not contain DNS; awg-quick may fail without resolvconf")
 	}
 
 	if !contains(config, "MTU = 1420") {
