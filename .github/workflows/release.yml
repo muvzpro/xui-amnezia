@@ -58,7 +58,7 @@ jobs:
 
       - name: Build frontend bundle
         run: |
-          npm ci
+          npm install --legacy-peer-deps
           npm run build
         working-directory: frontend
 

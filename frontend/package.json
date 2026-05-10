@@ -34,5 +34,9 @@
   },
   "overrides": {
     "moment-jalaali": "^0.10.4"
+  },
+  "optionalDependencies": {
+    "@emnapi/core": "^1.7.1",
+    "@emnapi/runtime": "^1.7.1"
   }
 }
