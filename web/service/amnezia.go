@@ -1011,6 +1011,28 @@ func (s *AmneziaService) dockerAction(action, interfaceName string) error {
 	case "restart":
 		_ = s.dockerAction("stop", interfaceName)
 		return s.dockerAction("start", interfaceName)
+	case "syncconf":
+		// Hot-reload config without restarting container (PRVTPRO approach)
+		stripCmd := exec.Command("docker", "exec", container, "awg-quick", "strip", configPath)
+		stripped, err := stripCmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("awg-quick strip failed: %w: %s", err, strings.TrimSpace(string(stripped)))
+		}
+		// Write stripped config to temp file inside container
+		tmpPath := fmt.Sprintf("/tmp/.x-ui-awg-sync-%s.conf", interfaceName)
+		writeCmd := exec.Command("docker", "exec", "-i", container, "sh", "-c", fmt.Sprintf("cat > %s", tmpPath))
+		writeCmd.Stdin = strings.NewReader(string(stripped))
+		if _, err := writeCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to write temp config to container: %w", err)
+		}
+		syncCmd := exec.Command("docker", "exec", container, "awg", "syncconf", interfaceName, tmpPath)
+		output, err := syncCmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("awg syncconf failed: %w: %s", err, strings.TrimSpace(string(output)))
+		}
+		// Cleanup temp file
+		_ = exec.Command("docker", "exec", container, "rm", "-f", tmpPath).Run()
+		return nil
 	default:
 		return fmt.Errorf("unsupported docker AmneziaWG action: %s", action)
 	}
@@ -1120,6 +1142,14 @@ func (s *AmneziaService) applyServerConfig(server *model.AmneziaServer, configPa
 		return nil
 	}
 	if err := s.syncServerConfig(server.InterfaceName, configPath); err != nil {
+		if s.useDockerRuntime() {
+			// In Docker mode, try awg-quick down/up inside container instead of full restart
+			_ = s.dockerAction("stop", server.InterfaceName)
+			if startErr := s.dockerAction("start", server.InterfaceName); startErr != nil {
+				return fmt.Errorf("sync failed: %v; docker start failed: %w", err, startErr)
+			}
+			return nil
+		}
 		if restartErr := s.systemctlAction("restart", server.InterfaceName); restartErr != nil {
 			return fmt.Errorf("sync failed: %v; restart failed: %w", err, restartErr)
 		}
@@ -1128,6 +1158,9 @@ func (s *AmneziaService) applyServerConfig(server *model.AmneziaServer, configPa
 }
 
 func (s *AmneziaService) syncServerConfig(interfaceName, configPath string) error {
+	if s.useDockerRuntime() {
+		return s.dockerAction("syncconf", interfaceName)
+	}
 	stripCmd, err := s.runtimeCommand("awg-quick", "strip", configPath)
 	if err != nil {
 		return err
