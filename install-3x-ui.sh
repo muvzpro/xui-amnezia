@@ -992,6 +992,24 @@ install_xui() {
     # Verify AmneziaWG installation
     verify_amneziawg_installation
     
+    # Enable and start AmneziaWG service
+    echo -e "${green}Enabling AmneziaWG service...${plain}"
+    systemctl daemon-reload
+    systemctl enable amneziawg@awg0.service
+    
+    # Start AmneziaWG if config exists
+    if [ -f "${amnezia_folder}/awg0.conf" ]; then
+        echo -e "${green}Starting AmneziaWG service...${plain}"
+        systemctl start amneziawg@awg0.service || echo -e "${yellow}Note: AmneziaWG service may need manual configuration${plain}"
+        
+        # Verify service is running
+        if systemctl is-active --quiet amneziawg@awg0.service; then
+            echo -e "${green}✓ AmneziaWG service is running${plain}"
+        else
+            echo -e "${yellow}⚠ AmneziaWG service not running - check configuration${plain}"
+        fi
+    fi
+
     config_after_install
 
     # Etckeeper compatibility

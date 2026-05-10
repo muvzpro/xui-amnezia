@@ -15,6 +15,7 @@ import {
   PauseCircleOutlined,
   ReloadOutlined,
   ClockCircleOutlined,
+  LinkOutlined,
 } from '@ant-design/icons-vue';
 
 import { HttpUtil } from '@/utils';
@@ -238,6 +239,29 @@ async function onShowQRCode(peer) {
   }
 }
 
+async function onShowVpnUri(peer) {
+  const msg = await HttpUtil.get(`/panel/api/amnezia/peers/${peer.id}/vpnuri`);
+  if (msg?.success && msg.obj?.vpnUri) {
+    Modal.info({
+      title: t('amnezia.vpnUri'),
+      content: `<div style="word-break: break-all; font-family: monospace; font-size: 12px;">${msg.obj.vpnUri}</div>`,
+      okText: t('close'),
+    });
+  }
+}
+
+async function onCopyVpnUri(peer) {
+  const msg = await HttpUtil.get(`/panel/api/amnezia/peers/${peer.id}/vpnuri`);
+  if (msg?.success && msg.obj?.vpnUri) {
+    try {
+      await navigator.clipboard.writeText(msg.obj.vpnUri);
+      message.success(t('amnezia.toasts.copied'));
+    } catch (err) {
+      message.error(t('amnezia.toasts.copyFailed'));
+    }
+  }
+}
+
 function getPeerStatus(peer) {
   if (!peer.enabled && peer.pausedReason === 'expired') {
     return { label: t('amnezia.statusExpired'), severity: 'danger' };
@@ -428,6 +452,11 @@ const totals = computed(() => {
                           <a-tooltip :title="t('amnezia.showQRCode')">
                             <a-button size="small" @click="onShowQRCode(record)">
                               <QrcodeOutlined />
+                            </a-button>
+                          </a-tooltip>
+                          <a-tooltip :title="t('amnezia.copyVpnUri')">
+                            <a-button size="small" @click="onCopyVpnUri(record)">
+                              <LinkOutlined />
                             </a-button>
                           </a-tooltip>
                           <a-popconfirm :title="t('amnezia.deletePeer')" @confirm="onDeletePeer(record)">
