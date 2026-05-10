@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, h, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Modal, message } from 'ant-design-vue';
 import axios from 'axios';
@@ -243,8 +243,10 @@ async function onShowQRCode(peer) {
   if (msg?.success && msg.obj?.qr) {
     Modal.info({
       title: t('amnezia.showQRCode'),
-      content: `<img src="${msg.obj.qr}" style="max-width: 100%;" />`,
+      content: () => h('img', { src: msg.obj.qr, style: { maxWidth: '100%', display: 'block', margin: '0 auto' } }),
       okText: t('close'),
+      width: 400,
+      onOk: () => {},
     });
   }
 }
@@ -254,8 +256,12 @@ async function onShowVpnUri(peer) {
   if (msg?.success && msg.obj?.vpnUri) {
     Modal.info({
       title: t('amnezia.vpnUri'),
-      content: `<div style="word-break: break-all; font-family: monospace; font-size: 12px;">${msg.obj.vpnUri}</div>`,
+      content: () => h('div', {
+        style: { wordBreak: 'break-all', fontFamily: 'monospace', fontSize: '12px', padding: '8px', background: '#f5f5f5', borderRadius: '4px' }
+      }, msg.obj.vpnUri),
       okText: t('close'),
+      width: 520,
+      onOk: () => {},
     });
   }
 }

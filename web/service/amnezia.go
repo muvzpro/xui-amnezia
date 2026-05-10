@@ -574,9 +574,19 @@ func (s *AmneziaService) GetPeerQRCode(peerId int) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if len(config) == 0 {
+		return "", errors.New("empty peer config")
+	}
+	// Limit config size for QR code (max ~2953 bytes for version 40)
+	if len(config) > 2800 {
+		config = config[:2800]
+	}
 	png, err := qrcode.Encode(config, qrcode.Medium, 256)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("qrcode encode failed: %w", err)
+	}
+	if len(png) == 0 {
+		return "", errors.New("qrcode encode returned empty data")
 	}
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(png), nil
 }
