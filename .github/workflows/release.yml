@@ -92,7 +92,8 @@ jobs:
           cd -
           go build -ldflags "-w -s -linkmode external -extldflags '-static'" -o xui-release -v main.go
           file xui-release
-          ldd xui-release || echo "Static binary confirmed"
+          # ldd returns non-zero for static binaries, which is expected
+          ldd xui-release 2>/dev/null || echo "Static binary confirmed"
 
           mkdir x-ui
           cp xui-release x-ui/
