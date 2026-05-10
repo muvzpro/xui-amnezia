@@ -17,6 +17,7 @@ type APIController struct {
 	inboundController *InboundController
 	serverController  *ServerController
 	nodeController    *NodeController
+	amneziaController *AmneziaController
 	settingService    service.SettingService
 	userService       service.UserService
 	Tgbot             service.Tgbot
@@ -81,6 +82,10 @@ func (a *APIController) initRouter(g *gin.RouterGroup, customGeo *service.Custom
 	// Nodes API — multi-panel management
 	nodes := api.Group("/nodes")
 	a.nodeController = NewNodeController(nodes)
+
+	// AmneziaWG API
+	amnezia := api.Group("/amnezia")
+	a.amneziaController = NewAmneziaController(amnezia)
 
 	NewCustomGeoController(api.Group("/custom-geo"), customGeo)
 

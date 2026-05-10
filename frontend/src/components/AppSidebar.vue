@@ -10,6 +10,7 @@ import {
   LogoutOutlined,
   CloseOutlined,
   MenuFoldOutlined,
+  SafetyOutlined,
 } from '@ant-design/icons-vue';
 
 import { currentTheme } from '@/composables/useTheme.js';
@@ -38,6 +39,7 @@ const iconByName = {
   tool: ToolOutlined,
   cluster: ClusterOutlined,
   logout: LogoutOutlined,
+  safety: SafetyOutlined,
 };
 
 // basePath comes from Go (`/` by default, `/myprefix/` when configured) so
@@ -52,6 +54,7 @@ const prefix = props.basePath?.startsWith('/') ? props.basePath : `/${props.base
 const tabs = computed(() => [
   { key: `${prefix}panel/`,         icon: 'dashboard', title: t('menu.dashboard') },
   { key: `${prefix}panel/inbounds`, icon: 'user',      title: t('menu.inbounds') },
+  { key: `${prefix}panel/amnezia`,   icon: 'safety',    title: t('menu.amnezia') },
   { key: `${prefix}panel/nodes`,    icon: 'cluster',   title: t('menu.nodes') },
   { key: `${prefix}panel/settings`, icon: 'setting',   title: t('menu.settings') },
   { key: `${prefix}panel/xray`,     icon: 'tool',      title: t('menu.xray') },

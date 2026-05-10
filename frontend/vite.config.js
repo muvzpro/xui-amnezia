@@ -26,6 +26,8 @@ const BASE_MIGRATED_ROUTES = {
   'panel/xray/': '/xray.html',
   'panel/nodes': '/nodes.html',
   'panel/nodes/': '/nodes.html',
+  'panel/amnezia': '/amnezia.html',
+  'panel/amnezia/': '/amnezia.html',
 };
 
 let cachedBasePath = '/';
@@ -151,6 +153,7 @@ export default defineConfig({
         xray: path.resolve(__dirname, 'xray.html'),
         nodes: path.resolve(__dirname, 'nodes.html'),
         subpage: path.resolve(__dirname, 'subpage.html'),
+        amnezia: path.resolve(__dirname, 'amnezia.html'),
       },
       output: {
         manualChunks(id) {
