@@ -1188,7 +1188,7 @@ func (s *AmneziaService) writeServerConfig(serverId int) (*model.AmneziaServer, 
 	}
 
 	// Use template renderer instead of string concatenation
-	config, err := RenderServerConfig(server, peers, obf)
+	config, err := RenderServerConfig(server, peers, obf, s.useDockerRuntime())
 	if err != nil {
 		return nil, fmt.Errorf("failed to render server config: %w", err)
 	}

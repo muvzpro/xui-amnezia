@@ -11,14 +11,15 @@ FROM alpine:3.19
 
 ARG AWGTOOLS_RELEASE="1.0.20250901"
 
-RUN apk add --no-cache bash curl iproute2 iptables unzip \
+RUN apk add --no-cache bash curl iproute2 iptables iptables-legacy unzip \
   && cd /usr/bin \
   && curl -fL -o amneziawg-tools.zip "https://github.com/amnezia-vpn/amneziawg-tools/releases/download/v${AWGTOOLS_RELEASE}/alpine-3.19-amneziawg-tools.zip" \
   && unzip -j amneziawg-tools.zip \
   && rm -f amneziawg-tools.zip \
   && chmod +x /usr/bin/awg /usr/bin/awg-quick \
   && ln -sf /usr/bin/awg /usr/bin/wg \
-  && ln -sf /usr/bin/awg-quick /usr/bin/wg-quick
+  && ln -sf /usr/bin/awg-quick /usr/bin/wg-quick \
+  && ln -sf /usr/sbin/iptables-legacy /usr/sbin/iptables 2>/dev/null || true
 
 COPY --from=builder /out/amneziawg-go /usr/bin/amneziawg-go
 

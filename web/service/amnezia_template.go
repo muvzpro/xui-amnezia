@@ -18,6 +18,7 @@ type ServerConfigTemplate struct {
 	DNS           string
 	MTU           int
 	SourceCIDR    string
+	IsDocker      bool
 
 	// AmneziaWG 2.0 obfuscation parameters
 	Jc   int
@@ -90,7 +91,11 @@ ListenPort = {{.ListenPort}}
 MTU = {{.MTU}}
 {{- end}}
 SaveConfig = false
+{{- if .IsDocker}}
+PostUp = iptables -C FORWARD -i {{.InterfaceName}} -j ACCEPT 2>/dev/null || iptables -A FORWARD -i {{.InterfaceName}} -j ACCEPT; iptables -C FORWARD -o {{.InterfaceName}} -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || iptables -A FORWARD -o {{.InterfaceName}} -m state --state ESTABLISHED,RELATED -j ACCEPT; iptables -t nat -C POSTROUTING -s {{.SourceCIDR}} -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s {{.SourceCIDR}} -j MASQUERADE
+{{- else}}
 PostUp = sysctl -w net.ipv4.ip_forward=1; iptables -C FORWARD -i {{.InterfaceName}} -j ACCEPT 2>/dev/null || iptables -A FORWARD -i {{.InterfaceName}} -j ACCEPT; iptables -C FORWARD -o {{.InterfaceName}} -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || iptables -A FORWARD -o {{.InterfaceName}} -m state --state ESTABLISHED,RELATED -j ACCEPT; iptables -t nat -C POSTROUTING -s {{.SourceCIDR}} -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s {{.SourceCIDR}} -j MASQUERADE
+{{- end}}
 PostDown = iptables -D FORWARD -i {{.InterfaceName}} -j ACCEPT 2>/dev/null || true; iptables -D FORWARD -o {{.InterfaceName}} -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true; iptables -t nat -D POSTROUTING -s {{.SourceCIDR}} -j MASQUERADE 2>/dev/null || true
 
 # AmneziaWG 2.0 Obfuscation Parameters
@@ -191,7 +196,7 @@ PersistentKeepalive = {{.PersistentKeepalive}}
 `
 
 // RenderServerConfig renders the AmneziaWG server configuration using template
-func RenderServerConfig(server *model.AmneziaServer, peers []model.AmneziaPeer, obf *model.AmneziaObfuscation) (string, error) {
+func RenderServerConfig(server *model.AmneziaServer, peers []model.AmneziaPeer, obf *model.AmneziaObfuscation, isDocker bool) (string, error) {
 	tmpl, err := template.New("server").Parse(serverConfigTmpl)
 	if err != nil {
 		return "", err
@@ -225,6 +230,7 @@ func RenderServerConfig(server *model.AmneziaServer, peers []model.AmneziaPeer, 
 		DNS           string
 		MTU           int
 		SourceCIDR    string
+		IsDocker      bool
 		Jc            int
 		Jmin          int
 		Jmax          int
@@ -250,6 +256,7 @@ func RenderServerConfig(server *model.AmneziaServer, peers []model.AmneziaPeer, 
 		DNS:           server.DNS,
 		MTU:           server.MTU,
 		SourceCIDR:    sourceCIDR(server.Address),
+		IsDocker:      isDocker,
 		Jc:            obf.Jc,
 		Jmin:          obf.Jmin,
 		Jmax:          obf.Jmax,
@@ -348,7 +355,7 @@ func sourceCIDR(address string) string {
 
 func (s *AmneziaService) generateServerConfig(server *model.AmneziaServer, peers []model.AmneziaPeer) string {
 	obf := s.parseObfuscationStruct(server.ObfuscationJSON)
-	config, err := RenderServerConfig(server, peers, obf)
+	config, err := RenderServerConfig(server, peers, obf, s.useDockerRuntime())
 	if err != nil {
 		return ""
 	}

@@ -325,7 +325,7 @@ func TestRenderServerConfigSkipsPeersWithoutAddress(t *testing.T) {
 		Enabled:   true,
 	}}
 
-	config, err := RenderServerConfig(server, peers, obf)
+	config, err := RenderServerConfig(server, peers, obf, false)
 	if err != nil {
 		t.Fatalf("RenderServerConfig failed: %v", err)
 	}
