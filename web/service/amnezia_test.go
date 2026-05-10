@@ -232,6 +232,14 @@ func TestGenerateServerConfig(t *testing.T) {
 		t.Error("Config should contain MTU")
 	}
 
+	if !contains(config, "SaveConfig = false") {
+		t.Error("Config should disable awg-quick SaveConfig")
+	}
+
+	if !contains(config, "PostUp =") || !contains(config, "10.0.0.0/24") {
+		t.Error("Config should contain NAT PostUp with masked source CIDR")
+	}
+
 	if !contains(config, "PublicKey = peerPublicKey") {
 		t.Error("Config should contain peer public key")
 	}

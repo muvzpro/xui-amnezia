@@ -813,7 +813,7 @@ install_x-ui() {
         fi
         
         echo -e "Installing x-ui ${tag_version}..."
-        curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz https://github.com/muvzpro/xui-amnezia/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz
+        curl -4fLR --http1.1 -o ${xui_folder}-linux-$(arch).tar.gz https://github.com/muvzpro/xui-amnezia/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz
         if [[ $? -ne 0 ]]; then
             echo -e "${red}Downloading x-ui failed, please be sure that your server can access GitHub${plain}"
             echo -e "${yellow}Manual download: https://github.com/muvzpro/xui-amnezia/releases/tag/${tag_version}${plain}"
@@ -823,7 +823,7 @@ install_x-ui() {
         tag_version=$1
         url="https://github.com/muvzpro/xui-amnezia/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz"
         echo -e "Beginning to install x-ui ${tag_version}"
-        curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz ${url}
+        curl -4fLR --http1.1 -o ${xui_folder}-linux-$(arch).tar.gz ${url}
         if [[ $? -ne 0 ]]; then
             echo -e "${red}Download x-ui ${tag_version} failed, please check if the version exists${plain}"
             exit 1

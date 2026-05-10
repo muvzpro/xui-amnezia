@@ -296,6 +296,22 @@ func (s *AmneziaService) UpdateServer(server *model.AmneziaServer) (*model.Amnez
 	if err := db.Model(existing).Updates(updates).Error; err != nil {
 		return nil, err
 	}
+	if err := db.First(existing, server.Id).Error; err != nil {
+		return nil, err
+	}
+	if _, err := s.writeServerConfig(existing.Id); err != nil {
+		return nil, err
+	}
+	running := s.IsServerRunning(existing.InterfaceName)
+	if !existing.Enabled && running {
+		if err := s.systemctlAction("stop", existing.InterfaceName); err != nil {
+			return nil, err
+		}
+	} else if existing.Enabled || running {
+		if err := s.systemctlAction("restart", existing.InterfaceName); err != nil {
+			return nil, err
+		}
+	}
 	return existing, nil
 }
 
@@ -905,6 +921,9 @@ func (s *AmneziaService) systemctlAction(action, interfaceName string) error {
 	if _, err := exec.LookPath("systemctl"); err != nil {
 		return fmt.Errorf("systemctl not found")
 	}
+	if err := s.ensureSystemdTemplate(); err != nil {
+		return err
+	}
 	cmd := exec.Command("systemctl", action, unit)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1001,13 +1020,61 @@ func (s *AmneziaService) RebuildServerConfig(serverId int) error {
 	if err != nil {
 		return err
 	}
-
-	// Restart the AmneziaWG service
-	if err := s.systemctlAction("restart", server.InterfaceName); err != nil {
-		// Log warning but don't fail - config is written
-		fmt.Printf("Warning: failed to restart server %d: %v\n", serverId, err)
+	configPath := filepath.Join(amneziaConfigDir, fmt.Sprintf("%s.conf", server.InterfaceName))
+	if err := s.applyServerConfig(server, configPath); err != nil {
+		fmt.Printf("Warning: failed to apply AmneziaWG config for server %d: %v\n", serverId, err)
 	}
 
+	return nil
+}
+
+func (s *AmneziaService) applyServerConfig(server *model.AmneziaServer, configPath string) error {
+	if !s.IsServerRunning(server.InterfaceName) {
+		if server.Enabled {
+			return s.systemctlAction("start", server.InterfaceName)
+		}
+		return nil
+	}
+	if err := s.syncServerConfig(server.InterfaceName, configPath); err != nil {
+		if restartErr := s.systemctlAction("restart", server.InterfaceName); restartErr != nil {
+			return fmt.Errorf("sync failed: %v; restart failed: %w", err, restartErr)
+		}
+	}
+	return nil
+}
+
+func (s *AmneziaService) syncServerConfig(interfaceName, configPath string) error {
+	awgPath, err := exec.LookPath("awg")
+	if err != nil {
+		return err
+	}
+	awgQuickPath, err := exec.LookPath("awg-quick")
+	if err != nil {
+		return err
+	}
+	stripCmd := exec.Command(awgQuickPath, "strip", configPath)
+	stripped, err := stripCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("awg-quick strip failed: %w: %s", err, strings.TrimSpace(string(stripped)))
+	}
+	tmp, err := os.CreateTemp("", "x-ui-awg-sync-*.conf")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err := tmp.Write(stripped); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	syncCmd := exec.Command(awgPath, "syncconf", interfaceName, tmpName)
+	output, err := syncCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("awg syncconf failed: %w: %s", err, strings.TrimSpace(string(output)))
+	}
 	return nil
 }
 

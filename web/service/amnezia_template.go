@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"net/netip"
 	"strings"
 	"text/template"
 
@@ -10,11 +11,13 @@ import (
 
 // ServerConfigTemplate holds data for AmneziaWG server configuration template
 type ServerConfigTemplate struct {
-	PrivateKey string
-	Address    string
-	ListenPort int
-	DNS        string
-	MTU        int
+	InterfaceName string
+	PrivateKey    string
+	Address       string
+	ListenPort    int
+	DNS           string
+	MTU           int
+	SourceCIDR    string
 
 	// AmneziaWG 2.0 obfuscation parameters
 	Jc   int
@@ -86,6 +89,9 @@ ListenPort = {{.ListenPort}}
 {{- if .MTU}}
 MTU = {{.MTU}}
 {{- end}}
+SaveConfig = false
+PostUp = sysctl -w net.ipv4.ip_forward=1; iptables -C FORWARD -i {{.InterfaceName}} -j ACCEPT 2>/dev/null || iptables -A FORWARD -i {{.InterfaceName}} -j ACCEPT; iptables -C FORWARD -o {{.InterfaceName}} -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || iptables -A FORWARD -o {{.InterfaceName}} -m state --state ESTABLISHED,RELATED -j ACCEPT; iptables -t nat -C POSTROUTING -s {{.SourceCIDR}} -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s {{.SourceCIDR}} -j MASQUERADE
+PostDown = iptables -D FORWARD -i {{.InterfaceName}} -j ACCEPT 2>/dev/null || true; iptables -D FORWARD -o {{.InterfaceName}} -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true; iptables -t nat -D POSTROUTING -s {{.SourceCIDR}} -j MASQUERADE 2>/dev/null || true
 
 # AmneziaWG 2.0 Obfuscation Parameters
 Jc = {{.Jc}}
@@ -218,6 +224,7 @@ func RenderServerConfig(server *model.AmneziaServer, peers []model.AmneziaPeer, 
 		ListenPort    int
 		DNS           string
 		MTU           int
+		SourceCIDR    string
 		Jc            int
 		Jmin          int
 		Jmax          int
@@ -242,6 +249,7 @@ func RenderServerConfig(server *model.AmneziaServer, peers []model.AmneziaPeer, 
 		ListenPort:    server.ListenPort,
 		DNS:           server.DNS,
 		MTU:           server.MTU,
+		SourceCIDR:    sourceCIDR(server.Address),
 		Jc:            obf.Jc,
 		Jmin:          obf.Jmin,
 		Jmax:          obf.Jmax,
@@ -324,6 +332,18 @@ func containsCIDR(addr string) bool {
 		}
 	}
 	return false
+}
+
+func sourceCIDR(address string) string {
+	addr := strings.TrimSpace(address)
+	if addr == "" {
+		return "10.0.0.0/24"
+	}
+	prefix, err := netip.ParsePrefix(addr)
+	if err == nil {
+		return prefix.Masked().String()
+	}
+	return addr
 }
 
 func (s *AmneziaService) generateServerConfig(server *model.AmneziaServer, peers []model.AmneziaPeer) string {

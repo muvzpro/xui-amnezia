@@ -313,6 +313,8 @@ PrivateKey = ${private_key}
 Address = ${wg_network}.1/24
 ListenPort = ${wg_port}
 SaveConfig = false
+PostUp = sysctl -w net.ipv4.ip_forward=1; iptables -C FORWARD -i awg0 -j ACCEPT 2>/dev/null || iptables -A FORWARD -i awg0 -j ACCEPT; iptables -C FORWARD -o awg0 -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || iptables -A FORWARD -o awg0 -m state --state ESTABLISHED,RELATED -j ACCEPT; iptables -t nat -C POSTROUTING -s ${wg_network}.0/24 -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s ${wg_network}.0/24 -j MASQUERADE
+PostDown = iptables -D FORWARD -i awg0 -j ACCEPT 2>/dev/null || true; iptables -D FORWARD -o awg0 -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true; iptables -t nat -D POSTROUTING -s ${wg_network}.0/24 -j MASQUERADE 2>/dev/null || true
 
 # AmneziaWG 2.0 Obfuscation Parameters
 # These help bypass DPI detection
@@ -898,8 +900,8 @@ install_xui() {
         
         echo -e "Got x-ui latest version: ${tag_version}, beginning the installation..."
         
-        # Download from muvzpro/xui-amnezia only
-        curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz https://github.com/muvzpro/xui-amnezia/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz
+        # Download from muvzpro/xui-amnezia only (use --http1.1 to avoid HTTP/2 errors)
+        curl -4fLR --http1.1 -o ${xui_folder}-linux-$(arch).tar.gz https://github.com/muvzpro/xui-amnezia/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz
         if [[ $? -ne 0 ]]; then
             echo -e "${red}Downloading x-ui failed from muvzpro/xui-amnezia${plain}"
             echo -e "${red}Please ensure your server can access GitHub${plain}"
@@ -911,7 +913,7 @@ install_xui() {
         tag_version=$1
         url="https://github.com/muvzpro/xui-amnezia/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz"
         echo -e "Beginning to install x-ui $1"
-        curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz ${url}
+        curl -4fLR --http1.1 -o ${xui_folder}-linux-$(arch).tar.gz ${url}
         if [[ $? -ne 0 ]]; then
             echo -e "${red}Download x-ui $1 failed from muvzpro/xui-amnezia${plain}"
             exit 1
