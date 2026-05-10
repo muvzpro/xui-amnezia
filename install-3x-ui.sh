@@ -265,13 +265,20 @@ services:
     image: ${amnezia_image}
     container_name: ${amnezia_container}
     network_mode: host
+    privileged: true
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
+      - NET_RAW
     devices:
       - /dev/net/tun:/dev/net/tun
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.all.forwarding=1
     volumes:
       - ${amnezia_folder}/:/etc/amnezia/amneziawg/
+      - /lib/modules:/lib/modules:ro
       - ${amnezia_docker_dir}/entrypoint.sh:/entrypoint.sh:ro
     environment:
       LOG_LEVEL: "info"

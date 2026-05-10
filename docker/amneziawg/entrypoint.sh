@@ -18,6 +18,17 @@ if command -v iptables-legacy >/dev/null 2>&1; then
     update-alternatives --set iptables /usr/sbin/iptables-legacy 2>/dev/null || true
 fi
 
+# Check if /dev/net/tun is available
+if [ ! -c /dev/net/tun ]; then
+    echo "ERROR: /dev/net/tun device not available. WireGuard cannot create tunnel interfaces."
+    echo "Make sure the container has --device /dev/net/tun:/dev/net/tun and NET_ADMIN capability."
+    exit 1
+fi
+
+echo "Starting AmneziaWG entrypoint..."
+echo "CONFIG_DIR: $CONFIG_DIR"
+echo "Available configs: $(ls -la $CONFIG_DIR/*.conf 2>/dev/null || echo 'none')"
+
 up_all() {
   for conf in "$CONFIG_DIR"/*.conf; do
     [ -f "$conf" ] || continue
@@ -26,11 +37,17 @@ up_all() {
       echo "Interface $iface already up, skipping"
       continue
     fi
-    echo "Bringing up $iface..."
-    awg-quick up "$conf" || {
-      echo "awg-quick up failed for $iface, trying userspace fallback..."
-      WG_QUICK_USERSPACE_IMPLEMENTATION=amneziawg-go awg-quick up "$conf" || true
-    }
+    echo "Bringing up $iface with config $conf..."
+    if awg-quick up "$conf"; then
+        echo "Successfully brought up $iface"
+    else
+        echo "Failed to bring up $iface, trying userspace fallback..."
+        if WG_QUICK_USERSPACE_IMPLEMENTATION=amneziawg-go awg-quick up "$conf"; then
+            echo "Successfully brought up $iface with userspace fallback"
+        else
+            echo "Failed to bring up $iface even with userspace fallback"
+        fi
+    fi
   done
 }
 
@@ -47,6 +64,7 @@ trap 'down_all; exit 0' INT TERM
 up_all
 
 # Keep container alive and watch for config changes
+echo "AmneziaWG entrypoint ready. Active interfaces: $(awg show interfaces 2>/dev/null || echo 'none')"
 while :; do
   sleep 3600 &
   wait $!
