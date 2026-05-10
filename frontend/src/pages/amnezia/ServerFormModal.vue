@@ -196,7 +196,6 @@ function generateHeaderRange() {
           <a-form-item :label="t('amnezia.serverType')">
             <a-select v-model:value="form.serverType">
               <a-select-option value="local">{{ t('amnezia.localServer') }}</a-select-option>
-              <a-select-option value="remote">{{ t('amnezia.remoteServer') }}</a-select-option>
             </a-select>
           </a-form-item>
         </a-col>
@@ -219,7 +218,7 @@ function generateHeaderRange() {
       <a-divider>
         <a-button type="link" @click="showObfuscation = !showObfuscation">
           {{ t('amnezia.obfuscationParams') }}
-          {{ showObfuscation ? '▲' : '▼' }}
+          {{ showObfuscation ? '^' : 'v' }}
         </a-button>
       </a-divider>
 

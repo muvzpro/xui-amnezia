@@ -265,6 +265,9 @@ func (s *Server) startTask() {
 	if err != nil {
 		logger.Warning("start xray failed:", err)
 	}
+	if err := service.NewAmneziaService().PrepareRuntime(); err != nil {
+		logger.Warning("prepare AmneziaWG runtime failed:", err)
+	}
 	// Check whether xray is running every second
 	s.cron.AddJob("@every 1s", job.NewCheckXrayRunningJob())
 
@@ -292,6 +295,9 @@ func (s *Server) startTask() {
 	// Pull traffic + online-clients from every online node every 10 sec
 	// and merge absolute counters into the central DB.
 	s.cron.AddJob("@every 10s", job.NewNodeTrafficSyncJob())
+
+	// Collect AmneziaWG transfer counters, handshakes and enforce peer limits.
+	s.cron.AddJob("@every 5s", job.NewAmneziaRuntimeJob())
 
 	// check client ips from log file every day
 	s.cron.AddJob("@daily", job.NewClearLogsJob())

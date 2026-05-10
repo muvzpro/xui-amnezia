@@ -818,24 +818,35 @@ amnezia_menu() {
         2)
             read -rp "Enter interface name (e.g., awg0): " iface
             if [[ -n "$iface" ]]; then
-                systemctl start amneziawg@$iface 2>/dev/null || awg-quick up $iface 2>/dev/null
-                echo -e "${green}Started $iface${plain}"
+                if systemctl start amneziawg@$iface 2>/dev/null || awg-quick up /etc/amnezia/amneziawg/$iface.conf 2>/dev/null; then
+                    echo -e "${green}Started $iface${plain}"
+                else
+                    echo -e "${red}Failed to start $iface${plain}"
+                    systemctl status amneziawg@$iface --no-pager -l 2>/dev/null || true
+                fi
             fi
             amnezia_menu
             ;;
         3)
             read -rp "Enter interface name (e.g., awg0): " iface
             if [[ -n "$iface" ]]; then
-                systemctl stop amneziawg@$iface 2>/dev/null || awg-quick down $iface 2>/dev/null
-                echo -e "${yellow}Stopped $iface${plain}"
+                if systemctl stop amneziawg@$iface 2>/dev/null || awg-quick down /etc/amnezia/amneziawg/$iface.conf 2>/dev/null; then
+                    echo -e "${yellow}Stopped $iface${plain}"
+                else
+                    echo -e "${red}Failed to stop $iface${plain}"
+                fi
             fi
             amnezia_menu
             ;;
         4)
             read -rp "Enter interface name (e.g., awg0): " iface
             if [[ -n "$iface" ]]; then
-                systemctl restart amneziawg@$iface 2>/dev/null || { awg-quick down $iface 2>/dev/null; awg-quick up $iface 2>/dev/null; }
-                echo -e "${green}Restarted $iface${plain}"
+                if systemctl restart amneziawg@$iface 2>/dev/null || { awg-quick down /etc/amnezia/amneziawg/$iface.conf 2>/dev/null; awg-quick up /etc/amnezia/amneziawg/$iface.conf 2>/dev/null; }; then
+                    echo -e "${green}Restarted $iface${plain}"
+                else
+                    echo -e "${red}Failed to restart $iface${plain}"
+                    systemctl status amneziawg@$iface --no-pager -l 2>/dev/null || true
+                fi
             fi
             amnezia_menu
             ;;

@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"strings"
 	"text/template"
 
 	"github.com/mhsanaei/3x-ui/v3/database/model"
@@ -41,15 +42,15 @@ type ServerConfigTemplate struct {
 type PeerConfigTemplate struct {
 	Name string
 
-	PrivateKey       string
-	PublicKey        string
-	PresharedKey     string
-	Address          string
-	AllowedIPs       string
-	Endpoint         string
+	PrivateKey          string
+	PublicKey           string
+	PresharedKey        string
+	Address             string
+	AllowedIPs          string
+	Endpoint            string
 	PersistentKeepalive int
-	DNS              string
-	MTU              int
+	DNS                 string
+	MTU                 int
 
 	// Server public key for client config
 	ServerPublicKey string
@@ -196,17 +197,20 @@ func RenderServerConfig(server *model.AmneziaServer, peers []model.AmneziaPeer, 
 	// Build peer templates
 	peerTemplates := make([]PeerConfigTemplate, 0, len(peers))
 	for _, peer := range peers {
-		allowedIPs := peer.Address
+		allowedIPs := strings.TrimSpace(peer.Address)
+		if allowedIPs == "" {
+			continue
+		}
 		if idx := len(allowedIPs) - 1; idx > 0 && allowedIPs[idx:] == "/32" {
 			// Already has CIDR
 		} else if !containsCIDR(allowedIPs) {
 			allowedIPs = allowedIPs + "/32"
 		}
 		peerTemplates = append(peerTemplates, PeerConfigTemplate{
-			Name:          peer.Name,
-			PublicKey:     peer.PublicKey,
-			PresharedKey:  peer.PresharedKey,
-			AllowedIPs:    allowedIPs,
+			Name:         peer.Name,
+			PublicKey:    peer.PublicKey,
+			PresharedKey: peer.PresharedKey,
+			AllowedIPs:   allowedIPs,
 		})
 	}
 
@@ -275,32 +279,32 @@ func RenderClientConfig(peer *model.AmneziaPeer, server *model.AmneziaServer, ob
 	}
 
 	data := PeerConfigTemplate{
-		PrivateKey:         peer.PrivateKey,
-		PublicKey:          peer.PublicKey,
-		PresharedKey:       peer.PresharedKey,
-		Address:            peer.Address,
-		AllowedIPs:         peer.AllowedIPs,
-		Endpoint:           peer.Endpoint,
+		PrivateKey:          peer.PrivateKey,
+		PublicKey:           peer.PublicKey,
+		PresharedKey:        peer.PresharedKey,
+		Address:             peer.Address,
+		AllowedIPs:          peer.AllowedIPs,
+		Endpoint:            peer.Endpoint,
 		PersistentKeepalive: peer.PersistentKeepalive,
-		DNS:                server.DNS,
-		MTU:                server.MTU,
-		ServerPublicKey:    server.PublicKey,
-		Jc:                 obf.Jc,
-		Jmin:               obf.Jmin,
-		Jmax:               obf.Jmax,
-		S1:                 obf.S1,
-		S2:                 obf.S2,
-		S3:                 obf.S3,
-		S4:                 obf.S4,
-		H1:                 obf.H1,
-		H2:                 obf.H2,
-		H3:                 obf.H3,
-		H4:                 obf.H4,
-		I1:                 obf.I1,
-		I2:                 obf.I2,
-		I3:                 obf.I3,
-		I4:                 obf.I4,
-		I5:                 obf.I5,
+		DNS:                 server.DNS,
+		MTU:                 server.MTU,
+		ServerPublicKey:     server.PublicKey,
+		Jc:                  obf.Jc,
+		Jmin:                obf.Jmin,
+		Jmax:                obf.Jmax,
+		S1:                  obf.S1,
+		S2:                  obf.S2,
+		S3:                  obf.S3,
+		S4:                  obf.S4,
+		H1:                  obf.H1,
+		H2:                  obf.H2,
+		H3:                  obf.H3,
+		H4:                  obf.H4,
+		I1:                  obf.I1,
+		I2:                  obf.I2,
+		I3:                  obf.I3,
+		I4:                  obf.I4,
+		I5:                  obf.I5,
 	}
 
 	// Use server endpoint if peer doesn't have one
@@ -323,4 +327,45 @@ func containsCIDR(addr string) bool {
 		}
 	}
 	return false
+}
+
+func (s *AmneziaService) generateServerConfig(server *model.AmneziaServer, peers []model.AmneziaPeer) string {
+	obf := s.parseObfuscationStruct(server.ObfuscationJSON)
+	config, err := RenderServerConfig(server, peers, obf)
+	if err != nil {
+		return ""
+	}
+	if strings.TrimSpace(server.ObfuscationJSON) == "" {
+		config = stripObfuscationParams(config)
+	}
+	return config
+}
+
+func stripObfuscationParams(config string) string {
+	lines := strings.Split(config, "\n")
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "# AmneziaWG 2.0 Obfuscation Parameters" ||
+			strings.HasPrefix(trimmed, "Jc =") ||
+			strings.HasPrefix(trimmed, "Jmin =") ||
+			strings.HasPrefix(trimmed, "Jmax =") ||
+			strings.HasPrefix(trimmed, "S1 =") ||
+			strings.HasPrefix(trimmed, "S2 =") ||
+			strings.HasPrefix(trimmed, "S3 =") ||
+			strings.HasPrefix(trimmed, "S4 =") ||
+			strings.HasPrefix(trimmed, "H1 =") ||
+			strings.HasPrefix(trimmed, "H2 =") ||
+			strings.HasPrefix(trimmed, "H3 =") ||
+			strings.HasPrefix(trimmed, "H4 =") ||
+			strings.HasPrefix(trimmed, "I1 =") ||
+			strings.HasPrefix(trimmed, "I2 =") ||
+			strings.HasPrefix(trimmed, "I3 =") ||
+			strings.HasPrefix(trimmed, "I4 =") ||
+			strings.HasPrefix(trimmed, "I5 =") {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	return strings.Join(filtered, "\n")
 }

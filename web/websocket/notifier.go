@@ -71,6 +71,13 @@ func BroadcastNodes(nodes any) {
 	}
 }
 
+// BroadcastAmnezia broadcasts AmneziaWG server/peer runtime updates.
+func BroadcastAmnezia(payload any) {
+	if hub := GetHub(); hub != nil {
+		hub.Broadcast(MessageTypeAmnezia, payload)
+	}
+}
+
 // BroadcastOutbounds broadcasts outbounds list update to all connected clients.
 func BroadcastOutbounds(outbounds any) {
 	if hub := GetHub(); hub != nil {

@@ -19,6 +19,7 @@ const (
 	MessageTypeInbounds     MessageType = "inbounds"
 	MessageTypeOutbounds    MessageType = "outbounds"
 	MessageTypeNodes        MessageType = "nodes"
+	MessageTypeAmnezia      MessageType = "amnezia"
 	MessageTypeNotification MessageType = "notification"
 	MessageTypeXrayState    MessageType = "xray_state"
 	// MessageTypeClientStats carries absolute traffic counters for the clients

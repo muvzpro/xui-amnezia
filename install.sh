@@ -800,7 +800,7 @@ install_x-ui() {
     # Download resources from muvzpro/xui-amnezia repository
     if [ $# == 0 ]; then
         # Default version - always use this for AmneziaWG fork
-        tag_version="v1.1.1"
+        tag_version="v1.1.2"
         
         # Try to get latest version from GitHub API (optional)
         latest_version=$(curl -Ls "https://api.github.com/repos/muvzpro/xui-amnezia/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')

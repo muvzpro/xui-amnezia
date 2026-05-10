@@ -189,15 +189,15 @@ func TestGenerateServerConfig(t *testing.T) {
 
 	peers := []model.AmneziaPeer{
 		{
-			Id:              1,
-			ServerID:        1,
-			Name:            "Peer 1",
-			PrivateKey:      "peerPrivateKey",
-			PublicKey:       "peerPublicKey",
-			PresharedKey:    "presharedKey",
-			Address:         "10.0.0.2/32",
-			AllowedIPs:      "0.0.0.0/0, ::/0",
-			Enabled:         true,
+			Id:           1,
+			ServerID:     1,
+			Name:         "Peer 1",
+			PrivateKey:   "peerPrivateKey",
+			PublicKey:    "peerPublicKey",
+			PresharedKey: "presharedKey",
+			Address:      "10.0.0.2/32",
+			AllowedIPs:   "0.0.0.0/0, ::/0",
+			Enabled:      true,
 		},
 	}
 
@@ -274,6 +274,61 @@ func TestGenerateServerConfigWithoutObfuscation(t *testing.T) {
 	// Should not contain obfuscation parameters
 	if contains(config, "Jc") {
 		t.Error("Config should not contain obfuscation params when empty")
+	}
+}
+
+func TestRenderServerConfigSkipsPeersWithoutAddress(t *testing.T) {
+	server := &model.AmneziaServer{
+		InterfaceName: "awg0",
+		ListenPort:    51820,
+		PrivateKey:    "privateKey",
+		Address:       "10.0.0.1/24",
+	}
+	obf := &model.AmneziaObfuscation{
+		Jc:   5,
+		Jmin: 50,
+		Jmax: 200,
+		S1:   72,
+		S2:   56,
+		S3:   32,
+		S4:   16,
+		H1:   "100000-200000",
+		H2:   "300000-400000",
+		H3:   "500000-600000",
+		H4:   "700000-800000",
+	}
+	peers := []model.AmneziaPeer{{
+		Name:      "empty-address",
+		PublicKey: "peerPublicKey",
+		Enabled:   true,
+	}}
+
+	config, err := RenderServerConfig(server, peers, obf)
+	if err != nil {
+		t.Fatalf("RenderServerConfig failed: %v", err)
+	}
+	if contains(config, "AllowedIPs = \n") || contains(config, "AllowedIPs = /32") {
+		t.Error("Config should not emit an invalid empty peer AllowedIPs")
+	}
+}
+
+func TestParseAwgDump(t *testing.T) {
+	dump := "awg0\tserver-private\tserver-public\t51820\toff\n" +
+		"awg0\tpeerPublic\tpsk\t1.2.3.4:5555\t10.0.0.2/32\t1710000000\t1234\t5678\t25\n"
+
+	peers := parseAwgDump(dump)
+	peer, ok := peers["peerPublic"]
+	if !ok {
+		t.Fatal("expected peer runtime row")
+	}
+	if peer.Interface != "awg0" {
+		t.Errorf("expected interface awg0, got %s", peer.Interface)
+	}
+	if peer.Handshake != 1710000000 {
+		t.Errorf("expected handshake 1710000000, got %d", peer.Handshake)
+	}
+	if peer.ReceiveBytes != 1234 || peer.TransmitBytes != 5678 {
+		t.Errorf("unexpected transfer counters: rx=%d tx=%d", peer.ReceiveBytes, peer.TransmitBytes)
 	}
 }
 

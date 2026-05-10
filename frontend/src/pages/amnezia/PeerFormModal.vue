@@ -20,6 +20,7 @@ const form = ref({
   allowedIps: '0.0.0.0/0, ::/0',
   persistentKeepalive: 25,
   expiryDays: null,
+  trafficLimitGb: 0,
   enabled: true,
 });
 
@@ -37,6 +38,7 @@ function resetForm() {
       allowedIps: props.peer.allowedIps || '0.0.0.0/0, ::/0',
       persistentKeepalive: props.peer.persistentKeepalive || 25,
       expiryDays: props.peer.expiryDays || null,
+      trafficLimitGb: props.peer.trafficLimit ? Number((props.peer.trafficLimit / 1073741824).toFixed(2)) : 0,
       enabled: props.peer.enabled ?? true,
     };
   } else {
@@ -46,6 +48,7 @@ function resetForm() {
       allowedIps: '0.0.0.0/0, ::/0',
       persistentKeepalive: 25,
       expiryDays: null,
+      trafficLimitGb: 0,
       enabled: true,
     };
   }
@@ -57,7 +60,9 @@ async function onSubmit() {
     const payload = {
       ...form.value,
       serverId: props.serverId,
+      trafficLimit: Math.round(Number(form.value.trafficLimitGb || 0) * 1073741824),
     };
+    delete payload.trafficLimitGb;
     const ok = await props.save(payload);
     if (ok) {
       emit('update:open', false);
@@ -103,6 +108,10 @@ function onClose() {
         <div style="color: #999; font-size: 12px; margin-top: 4px;">
           {{ t('amnezia.expiryDaysPlaceholder') }}
         </div>
+      </a-form-item>
+
+      <a-form-item :label="t('amnezia.traffic')">
+        <a-input-number v-model:value="form.trafficLimitGb" :min="0" :precision="2" style="width: 100%" addon-after="GB" />
       </a-form-item>
 
       <a-form-item :label="t('amnezia.peerEnabled')">

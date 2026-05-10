@@ -3,6 +3,7 @@
 .vscode/
 .claude/
 .cache/
+.gocache/
 .sync*
 
 # Ignore log files
