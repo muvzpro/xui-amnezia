@@ -3,8 +3,10 @@
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -288,6 +290,16 @@ func (s *AmneziaService) GetPeerConfig(peerId int) (string, error) {
     if server.MTU > 0 {
         builder.WriteString(fmt.Sprintf("MTU = %d\n", server.MTU))
     }
+
+    // Add AmneziaWG 2.0 obfuscation parameters for client config
+    if server.ObfuscationJSON != "" && server.ObfuscationJSON != "{}" {
+        builder.WriteString("\n# AmneziaWG 2.0 Obfuscation Parameters\n")
+        obfParams := s.parseObfuscationParams(server.ObfuscationJSON)
+        for key, value := range obfParams {
+            builder.WriteString(fmt.Sprintf("%s = %v\n", key, value))
+        }
+    }
+
     builder.WriteString("\n[Peer]\n")
     builder.WriteString(fmt.Sprintf("PublicKey = %s\n", server.PublicKey))
     if peer.PresharedKey != "" {
@@ -467,12 +479,142 @@ func (s *AmneziaService) ExtendPeer(peerId int, days int) error {
 // RebuildServerConfig regenerates the AmneziaWG server config with active peers.
 // This is called after peer creation, update, deletion, or expiry changes.
 func (s *AmneziaService) RebuildServerConfig(serverId int) error {
-    // For now, this is a placeholder. Full implementation would:
-    // 1. Get server and active peers
-    // 2. Generate AmneziaWG config file
-    // 3. Write to /etc/amneziawg/<interface>.conf
-    // 4. Reload/restart the amneziawg service
-    // The actual config generation and service management will be
-    // implemented in a separate config manager module.
+    server, err := s.GetServer(serverId)
+    if err != nil {
+        return fmt.Errorf("failed to get server: %w", err)
+    }
+
+    peers, err := s.GetActivePeersForConfig(serverId)
+    if err != nil {
+        return fmt.Errorf("failed to get active peers: %w", err)
+    }
+
+    config := s.generateServerConfig(server, peers)
+    configPath := fmt.Sprintf("/etc/amnezia/%s.conf", server.InterfaceName)
+
+    if err := s.writeConfigFile(configPath, config); err != nil {
+        return fmt.Errorf("failed to write config: %w", err)
+    }
+
+    // Restart the AmneziaWG service
+    if err := s.RestartServer(serverId); err != nil {
+        // Log warning but don't fail - config is written
+        fmt.Printf("Warning: failed to restart server %d: %v\n", serverId, err)
+    }
+
     return nil
+}
+
+// generateServerConfig creates the AmneziaWG server configuration string
+func (s *AmneziaService) generateServerConfig(server *model.AmneziaServer, peers []model.AmneziaPeer) string {
+    var builder strings.Builder
+
+    // [Interface] section
+    builder.WriteString("[Interface]\n")
+    builder.WriteString(fmt.Sprintf("PrivateKey = %s\n", server.PrivateKey))
+    builder.WriteString(fmt.Sprintf("Address = %s\n", server.Address))
+    builder.WriteString(fmt.Sprintf("ListenPort = %d\n", server.ListenPort))
+
+    if server.DNS != "" {
+        builder.WriteString(fmt.Sprintf("DNS = %s\n", server.DNS))
+    }
+    if server.MTU > 0 {
+        builder.WriteString(fmt.Sprintf("MTU = %d\n", server.MTU))
+    }
+
+    // AmneziaWG 2.0 obfuscation parameters (from ObfuscationJSON)
+    // These are stored as JSON and parsed for the config
+    if server.ObfuscationJSON != "" && server.ObfuscationJSON != "{}" {
+        builder.WriteString("\n# AmneziaWG 2.0 Obfuscation Parameters\n")
+        // Parse and add obfuscation parameters
+        obfParams := s.parseObfuscationParams(server.ObfuscationJSON)
+        for key, value := range obfParams {
+            builder.WriteString(fmt.Sprintf("%s = %v\n", key, value))
+        }
+    }
+
+    // [Peer] sections for each active peer
+    for _, peer := range peers {
+        builder.WriteString("\n[Peer]\n")
+        builder.WriteString(fmt.Sprintf("# %s\n", peer.Name))
+        builder.WriteString(fmt.Sprintf("PublicKey = %s\n", peer.PublicKey))
+        if peer.PresharedKey != "" {
+            builder.WriteString(fmt.Sprintf("PresharedKey = %s\n", peer.PresharedKey))
+        }
+        if peer.Address != "" {
+            // Extract the IP without the CIDR for AllowedIPs
+            addr := peer.Address
+            if idx := strings.Index(addr, "/"); idx > 0 {
+                addr = addr[:idx]
+            }
+            builder.WriteString(fmt.Sprintf("AllowedIPs = %s/32\n", addr))
+        }
+    }
+
+    return builder.String()
+}
+
+// GenerateObfuscationParams creates random AmneziaWG 2.0 obfuscation parameters
+// These are used to bypass DPI detection
+func (s *AmneziaService) GenerateObfuscationParams() *model.AmneziaObfuscation {
+    // Default recommended values for AmneziaWG 2.0
+    // These values are based on AmneziaVPN recommendations
+    return &model.AmneziaObfuscation{
+        Jc:   randomInt(1, 5),      // Junk packet count: 1-5
+        Jmin: randomInt(50, 100),   // Min junk size: 50-100
+        Jmax: randomInt(500, 1000), // Max junk size: 500-1000
+        S1:   randomInt(15, 30),    // Initiation junk size 1: 15-30
+        S2:   randomInt(15, 30),    // Initiation junk size 2: 15-30
+        H1:   randomInt(15, 30),    // Response junk size 1: 15-30
+        H2:   randomInt(15, 30),    // Response junk size 2: 15-30
+        I1:   randomInt(5, 15),     // Interval 1: 5-15
+        I2:   randomInt(5, 15),     // Interval 2: 5-15
+    }
+}
+
+// randomInt generates a random integer between min and max (inclusive)
+func randomInt(min, max int) int {
+    if min >= max {
+        return min
+    }
+    n := max - min + 1
+    b := make([]byte, 1)
+    rand.Read(b)
+    return min + int(b[0])%n
+}
+
+// parseObfuscationParams extracts AmneziaWG 2.0 obfuscation parameters from JSON
+func (s *AmneziaService) parseObfuscationParams(jsonStr string) map[string]interface{} {
+    params := make(map[string]interface{})
+    if jsonStr == "" || jsonStr == "{}" {
+        return params
+    }
+
+    // Parse JSON obfuscation parameters
+    // AmneziaWG 2.0 supports parameters like:
+    // - Jc (junk packet count)
+    // - Jmin (minimum junk packets)
+    // - Jmax (maximum junk packets)
+    // - S1, S2 (initiation packet junk size)
+    // - H1, H2 (response packet junk size)
+    // - I1, I2 (interval parameters)
+    if err := json.Unmarshal([]byte(jsonStr), &params); err != nil {
+        fmt.Printf("Warning: failed to parse obfuscation params: %v\n", err)
+        return params
+    }
+
+    return params
+}
+
+// writeConfigFile writes the configuration to the specified path
+func (s *AmneziaService) writeConfigFile(path, content string) error {
+    // Write to file with proper permissions (0600 for security)
+    file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+
+    _, err = file.WriteString(content)
+    return err
 }

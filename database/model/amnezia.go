@@ -20,6 +20,29 @@ type AmneziaServer struct {
 	Peers           []AmneziaPeer `json:"peers" gorm:"foreignKey:ServerID"`
 }
 
+// AmneziaWG 2.0 Obfuscation Parameters
+// These parameters are used for traffic obfuscation to bypass DPI detection
+type AmneziaObfuscation struct {
+	// Jc - Junk packet count: number of junk packets to send before handshake
+	Jc int `json:"jc" form:"jc"`
+	// Jmin - Minimum junk packet size
+	Jmin int `json:"jmin" form:"jmin"`
+	// Jmax - Maximum junk packet size
+	Jmax int `json:"jmax" form:"jmax"`
+	// S1 - Initiation packet junk size (first packet)
+	S1 int `json:"s1" form:"s1"`
+	// S2 - Initiation packet junk size (second packet)
+	S2 int `json:"s2" form:"s2"`
+	// H1 - Response packet junk size (first packet)
+	H1 int `json:"h1" form:"h1"`
+	// H2 - Response packet junk size (second packet)
+	H2 int `json:"h2" form:"h2"`
+	// I1 - Interval parameter 1 (for timing obfuscation)
+	I1 int `json:"i1" form:"i1"`
+	// I2 - Interval parameter 2 (for timing obfuscation)
+	I2 int `json:"i2" form:"i2"`
+}
+
 // AmneziaPeer represents a peer client attached to an AmneziaWG server.
 type AmneziaPeer struct {
 	Id                  int     `json:"id" gorm:"primaryKey;autoIncrement"`

@@ -19,6 +19,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/util/sys"
 	"github.com/mhsanaei/3x-ui/v3/web"
 	"github.com/mhsanaei/3x-ui/v3/web/global"
+	"github.com/mhsanaei/3x-ui/v3/web/job"
 	"github.com/mhsanaei/3x-ui/v3/web/service"
 
 	"github.com/joho/godotenv"
@@ -68,6 +69,11 @@ func runWebServer() {
 		log.Fatalf("Error starting sub server: %v", err)
 		return
 	}
+
+	// Start AmneziaWG expiry job for automatic peer pausing
+	amneziaExpiryJob := job.NewAmneziaExpiryJob()
+	go amneziaExpiryJob.Run()
+	logger.Info("AmneziaWG expiry job started - checking for expired peers every minute")
 
 	sigCh := make(chan os.Signal, 1)
 	// Trap shutdown signals
@@ -120,6 +126,10 @@ func runWebServer() {
 			// --- FIX FOR TELEGRAM BOT CONFLICT (409) on full shutdown ---
 			service.StopBot()
 			// ------------------------------------------------------------
+
+			// Stop AmneziaWG expiry job
+			amneziaExpiryJob.Stop()
+			logger.Info("AmneziaWG expiry job stopped")
 
 			server.Stop()
 			subServer.Stop()
