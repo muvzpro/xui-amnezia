@@ -21,26 +21,42 @@ type AmneziaServer struct {
 }
 
 // AmneziaWG 2.0 Obfuscation Parameters
+// Based on: https://docs.amnezia.org/documentation/amnezia-wg/
 // These parameters are used for traffic obfuscation to bypass DPI detection
 type AmneziaObfuscation struct {
-	// Jc - Junk packet count: number of junk packets to send before handshake
+	// Jc - Junk packet count (4-12 recommended)
+	// Number of junk packets sent before handshake
 	Jc int `json:"jc" form:"jc"`
-	// Jmin - Minimum junk packet size
+	// Jmin - Minimum junk packet size (64-128 bytes)
 	Jmin int `json:"jmin" form:"jmin"`
-	// Jmax - Maximum junk packet size
+	// Jmax - Maximum junk packet size (768-1024 bytes)
 	Jmax int `json:"jmax" form:"jmax"`
-	// S1 - Initiation packet junk size (first packet)
+	// S1 - Initiation packet padding (0-64 bytes)
 	S1 int `json:"s1" form:"s1"`
-	// S2 - Initiation packet junk size (second packet)
+	// S2 - Response packet padding (0-64 bytes)
 	S2 int `json:"s2" form:"s2"`
-	// H1 - Response packet junk size (first packet)
-	H1 int `json:"h1" form:"h1"`
-	// H2 - Response packet junk size (second packet)
-	H2 int `json:"h2" form:"h2"`
-	// I1 - Interval parameter 1 (for timing obfuscation)
-	I1 int `json:"i1" form:"i1"`
-	// I2 - Interval parameter 2 (for timing obfuscation)
-	I2 int `json:"i2" form:"i2"`
+	// S3 - Cookie packet padding (0-64 bytes)
+	S3 int `json:"s3" form:"s3"`
+	// S4 - Transport data packet padding (0-32 bytes)
+	S4 int `json:"s4" form:"s4"`
+	// H1 - Initiation message header range (uint32, format: "min-max" or single value)
+	H1 string `json:"h1" form:"h1"`
+	// H2 - Response message header range (uint32)
+	H2 string `json:"h2" form:"h2"`
+	// H3 - Cookie message header range (uint32)
+	H3 string `json:"h3" form:"h3"`
+	// H4 - Transport message header range (uint32)
+	H4 string `json:"h4" form:"h4"`
+	// I1 - Custom signature packet 1 (CPS format: <b hex><r size><t> etc.)
+	I1 string `json:"i1" form:"i1"`
+	// I2 - Custom signature packet 2 (CPS format)
+	I2 string `json:"i2" form:"i2"`
+	// I3 - Custom signature packet 3 (CPS format)
+	I3 string `json:"i3" form:"i3"`
+	// I4 - Custom signature packet 4 (CPS format)
+	I4 string `json:"i4" form:"i4"`
+	// I5 - Custom signature packet 5 (CPS format)
+	I5 string `json:"i5" form:"i5"`
 }
 
 // AmneziaPeer represents a peer client attached to an AmneziaWG server.

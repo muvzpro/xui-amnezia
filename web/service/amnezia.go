@@ -556,21 +556,41 @@ func (s *AmneziaService) generateServerConfig(server *model.AmneziaServer, peers
 }
 
 // GenerateObfuscationParams creates random AmneziaWG 2.0 obfuscation parameters
-// These are used to bypass DPI detection
+// Based on: https://docs.amnezia.org/documentation/amnezia-wg/
 func (s *AmneziaService) GenerateObfuscationParams() *model.AmneziaObfuscation {
-    // Default recommended values for AmneziaWG 2.0
-    // These values are based on AmneziaVPN recommendations
+    // AmneziaWG 2.0 recommended values based on official documentation
+    // Jc: 4-12 (junk packet count)
+    // Jmin-Jmax: 64-1024 (junk packet size range)
+    // S1-S3: 0-64 (message padding for init/response/cookie)
+    // S4: 0-32 (transport data padding)
+    // H1-H4: uint32 ranges for dynamic headers
+    // I1-I5: CPS format custom signature packets (optional)
+    
     return &model.AmneziaObfuscation{
-        Jc:   randomInt(1, 5),      // Junk packet count: 1-5
-        Jmin: randomInt(50, 100),   // Min junk size: 50-100
-        Jmax: randomInt(500, 1000), // Max junk size: 500-1000
-        S1:   randomInt(15, 30),    // Initiation junk size 1: 15-30
-        S2:   randomInt(15, 30),    // Initiation junk size 2: 15-30
-        H1:   randomInt(15, 30),    // Response junk size 1: 15-30
-        H2:   randomInt(15, 30),    // Response junk size 2: 15-30
-        I1:   randomInt(5, 15),     // Interval 1: 5-15
-        I2:   randomInt(5, 15),     // Interval 2: 5-15
+        Jc:   randomInt(4, 12),     // Junk packet count: 4-12
+        Jmin: randomInt(64, 128),   // Min junk size: 64-128
+        Jmax: randomInt(768, 1024), // Max junk size: 768-1024
+        S1:   randomInt(0, 64),     // Init padding: 0-64
+        S2:   randomInt(0, 64),     // Response padding: 0-64
+        S3:   randomInt(0, 64),     // Cookie padding: 0-64
+        S4:   randomInt(0, 32),     // Transport padding: 0-32
+        H1:   generateHeaderRange(), // Init header range
+        H2:   generateHeaderRange(), // Response header range
+        H3:   generateHeaderRange(), // Cookie header range
+        H4:   generateHeaderRange(), // Transport header range
+        I1:   "", // Custom signature packets (optional)
+        I2:   "",
+        I3:   "",
+        I4:   "",
+        I5:   "",
     }
+}
+
+// generateHeaderRange creates a random uint32 header range for AmneziaWG 2.0
+func generateHeaderRange() string {
+    start := randomInt(0, 1000000)
+    end := start + randomInt(100000, 200000)
+    return fmt.Sprintf("%d-%d", start, end)
 }
 
 // randomInt generates a random integer between min and max (inclusive)
@@ -592,13 +612,12 @@ func (s *AmneziaService) parseObfuscationParams(jsonStr string) map[string]inter
     }
 
     // Parse JSON obfuscation parameters
-    // AmneziaWG 2.0 supports parameters like:
-    // - Jc (junk packet count)
-    // - Jmin (minimum junk packets)
-    // - Jmax (maximum junk packets)
-    // - S1, S2 (initiation packet junk size)
-    // - H1, H2 (response packet junk size)
-    // - I1, I2 (interval parameters)
+    // AmneziaWG 2.0 supports parameters based on official documentation:
+    // - Jc (junk packet count): 4-12 recommended
+    // - Jmin, Jmax (junk packet size): 64-1024 bytes
+    // - S1, S2, S3, S4 (message padding): 0-64 for S1-S3, 0-32 for S4
+    // - H1, H2, H3, H4 (dynamic headers): uint32 ranges
+    // - I1-I5 (custom signature packets): CPS format (optional)
     if err := json.Unmarshal([]byte(jsonStr), &params); err != nil {
         fmt.Printf("Warning: failed to parse obfuscation params: %v\n", err)
         return params

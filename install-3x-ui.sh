@@ -227,31 +227,58 @@ generate_awg_keys() {
 }
 
 # Generate AmneziaWG 2.0 obfuscation parameters
+# Based on: https://docs.amnezia.org/documentation/amnezia-wg/
 generate_obfuscation_params() {
     # AmneziaWG 2.0 recommended parameters
-    # Jc: Junk packet count (1-5)
-    # Jmin-Jmax: Junk packet size range
-    # S1, S2: Initiation packet junk sizes
-    # H1-H4: Response packet junk sizes
-    local Jc=$((RANDOM % 5 + 1))
-    local Jmin=$((RANDOM % 50 + 50))
-    local Jmax=$((RANDOM % 500 + 500))
-    local S1=$((RANDOM % 15 + 15))
-    local S2=$((RANDOM % 15 + 15))
-    local H1=$((RANDOM % 15 + 15))
-    local H2=$((RANDOM % 15 + 15))
-    local H3=$((RANDOM % 15 + 15))
-    local H4=$((RANDOM % 15 + 15))
+    # Jc: Junk packet count (4-12 recommended)
+    # Jmin-Jmax: Junk packet size range (64-1024 bytes)
+    # S1-S4: Message padding (0-64 for S1-S3, 0-32 for S4)
+    # H1-H4: Dynamic message headers (uint32 ranges)
+    # I1-I5: Custom signature packets (CPS format)
+    
+    local Jc=$((RANDOM % 9 + 4))           # 4-12
+    local Jmin=$((RANDOM % 64 + 64))       # 64-128
+    local Jmax=$((RANDOM % 256 + 768))     # 768-1024
+    local S1=$((RANDOM % 65))              # 0-64
+    local S2=$((RANDOM % 65))              # 0-64
+    local S3=$((RANDOM % 65))              # 0-64
+    local S4=$((RANDOM % 33))              # 0-32
+    
+    # H1-H4: Dynamic headers as ranges (uint32)
+    # Format: "min-max" or single value
+    local H1_start=$((RANDOM % 1000000))
+    local H1_end=$((H1_start + RANDOM % 100000 + 100000))
+    local H2_start=$((RANDOM % 1000000))
+    local H2_end=$((H2_start + RANDOM % 100000 + 100000))
+    local H3_start=$((RANDOM % 1000000))
+    local H3_end=$((H3_start + RANDOM % 100000 + 100000))
+    local H4_start=$((RANDOM % 1000000))
+    local H4_end=$((H4_start + RANDOM % 100000 + 100000))
+    
+    # I1-I5: Custom signature packets (CPS format)
+    # These are optional and used for protocol mimicry
+    # Format: <b hex_data><r size><t> etc.
+    # For simplicity, we generate basic signatures
+    local I1="<b 0xc0000000><r 40><t>"
+    local I2="<r 60>"
+    local I3=""
+    local I4=""
+    local I5=""
     
     echo "Jc = ${Jc}"
     echo "Jmin = ${Jmin}"
     echo "Jmax = ${Jmax}"
     echo "S1 = ${S1}"
     echo "S2 = ${S2}"
-    echo "H1 = ${H1}"
-    echo "H2 = ${H2}"
-    echo "H3 = ${H3}"
-    echo "H4 = ${H4}"
+    echo "S3 = ${S3}"
+    echo "S4 = ${S4}"
+    echo "H1 = ${H1_start}-${H1_end}"
+    echo "H2 = ${H2_start}-${H2_end}"
+    echo "H3 = ${H3_start}-${H3_end}"
+    echo "H4 = ${H4_start}-${H4_end}"
+    # I1-I5 are optional - uncomment if needed
+    # echo "I1 = ${I1}"
+    # echo "I2 = ${I2}"
 }
 
 # Setup AmneziaWG configuration directory
