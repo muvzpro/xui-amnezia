@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/netip"
 	"os"
 	"os/exec"
@@ -1311,19 +1312,20 @@ func (s *AmneziaService) GenerateObfuscationParams() *model.AmneziaObfuscation {
 	// H1-H4: uint32 ranges for dynamic headers
 	// I1-I5: CPS format custom signature packets (optional)
 
+	headers := generateHeaderRanges()
 	return &model.AmneziaObfuscation{
-		Jc:   randomInt(4, 12),      // Junk packet count: 4-12
-		Jmin: randomInt(64, 128),    // Min junk size: 64-128
-		Jmax: randomInt(768, 1024),  // Max junk size: 768-1024
-		S1:   randomInt(0, 64),      // Init padding: 0-64
-		S2:   randomInt(0, 64),      // Response padding: 0-64
-		S3:   randomInt(0, 64),      // Cookie padding: 0-64
-		S4:   randomInt(0, 32),      // Transport padding: 0-32
-		H1:   generateHeaderRange(), // Init header range
-		H2:   generateHeaderRange(), // Response header range
-		H3:   generateHeaderRange(), // Cookie header range
-		H4:   generateHeaderRange(), // Transport header range
-		I1:   "",                    // Custom signature packets (optional)
+		Jc:   randomInt(4, 12),     // Junk packet count: 4-12
+		Jmin: randomInt(64, 128),   // Min junk size: 64-128
+		Jmax: randomInt(768, 1024), // Max junk size: 768-1024
+		S1:   randomInt(0, 64),     // Init padding: 0-64
+		S2:   randomInt(0, 64),     // Response padding: 0-64
+		S3:   randomInt(0, 64),     // Cookie padding: 0-64
+		S4:   randomInt(0, 32),     // Transport padding: 0-32
+		H1:   headers[0],           // Init header range
+		H2:   headers[1],           // Response header range
+		H3:   headers[2],           // Cookie header range
+		H4:   headers[3],           // Transport header range
+		I1:   "",                   // Custom signature packets (optional)
 		I2:   "",
 		I3:   "",
 		I4:   "",
@@ -1331,11 +1333,16 @@ func (s *AmneziaService) GenerateObfuscationParams() *model.AmneziaObfuscation {
 	}
 }
 
-// generateHeaderRange creates a random uint32 header range for AmneziaWG 2.0
-func generateHeaderRange() string {
-	start := randomInt(0, 1000000)
-	end := start + randomInt(100000, 200000)
-	return fmt.Sprintf("%d-%d", start, end)
+// generateHeaderRanges creates random header ranges in separated bands so they cannot overlap.
+func generateHeaderRanges() [4]string {
+	bases := [4]int{100000, 300000, 500000, 700000}
+	var ranges [4]string
+	for i, base := range bases {
+		start := base + randomInt(0, 20000)
+		end := start + randomInt(20000, 60000)
+		ranges[i] = fmt.Sprintf("%d-%d", start, end)
+	}
+	return ranges
 }
 
 // randomInt generates a random integer between min and max (inclusive)
@@ -1343,10 +1350,11 @@ func randomInt(min, max int) int {
 	if min >= max {
 		return min
 	}
-	n := max - min + 1
-	b := make([]byte, 1)
-	rand.Read(b)
-	return min + int(b[0])%n
+	v, err := rand.Int(rand.Reader, big.NewInt(int64(max-min+1)))
+	if err != nil {
+		return min
+	}
+	return min + int(v.Int64())
 }
 
 // parseObfuscationParams extracts AmneziaWG 2.0 obfuscation parameters from JSON
@@ -1518,10 +1526,10 @@ func (s *AmneziaService) GenerateValidatedObfuscationParams() (*model.AmneziaObf
 	// Fallback to deterministic non-overlapping values
 	return &model.AmneziaObfuscation{
 		Jc:   5,
-		Jmin: 50,
+		Jmin: 64,
 		Jmax: 200,
-		S1:   72,
-		S2:   56, // S1 + 56 = 128 ≠ 56
+		S1:   32,
+		S2:   8,
 		S3:   32,
 		S4:   16,
 		H1:   "100000-200000",

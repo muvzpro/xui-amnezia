@@ -343,16 +343,15 @@ generate_obfuscation_params() {
     local S3=$((RANDOM % 65))              # 0-64
     local S4=$((RANDOM % 33))              # 0-32
     
-    # H1-H4: Dynamic headers as ranges (uint32)
-    # Format: "min-max" or single value
-    local H1_start=$((RANDOM % 1000000))
-    local H1_end=$((H1_start + RANDOM % 100000 + 100000))
-    local H2_start=$((RANDOM % 1000000))
-    local H2_end=$((H2_start + RANDOM % 100000 + 100000))
-    local H3_start=$((RANDOM % 1000000))
-    local H3_end=$((H3_start + RANDOM % 100000 + 100000))
-    local H4_start=$((RANDOM % 1000000))
-    local H4_end=$((H4_start + RANDOM % 100000 + 100000))
+    # H1-H4: separated dynamic header ranges. They must never overlap.
+    local H1_start=$((100000 + RANDOM % 20000))
+    local H1_end=$((H1_start + 20000 + RANDOM % 40000))
+    local H2_start=$((300000 + RANDOM % 20000))
+    local H2_end=$((H2_start + 20000 + RANDOM % 40000))
+    local H3_start=$((500000 + RANDOM % 20000))
+    local H3_end=$((H3_start + 20000 + RANDOM % 40000))
+    local H4_start=$((700000 + RANDOM % 20000))
+    local H4_end=$((H4_start + 20000 + RANDOM % 40000))
     
     # I1-I5: Custom signature packets (CPS format)
     # These are optional and used for protocol mimicry
@@ -380,6 +379,30 @@ generate_obfuscation_params() {
     # echo "I2 = ${I2}"
 }
 
+repair_amnezia_config_headers() {
+    local conf="$1"
+    [ -f "$conf" ] || return 0
+
+    local tmp="${conf}.tmp"
+    awk '
+      BEGIN {
+        seen_h1=0; seen_h2=0; seen_h3=0; seen_h4=0
+      }
+      /^H1[[:space:]]*=/ { print "H1 = 100000-160000"; seen_h1=1; next }
+      /^H2[[:space:]]*=/ { print "H2 = 300000-360000"; seen_h2=1; next }
+      /^H3[[:space:]]*=/ { print "H3 = 500000-560000"; seen_h3=1; next }
+      /^H4[[:space:]]*=/ { print "H4 = 700000-760000"; seen_h4=1; next }
+      { print }
+      END {
+        if (!seen_h1) print "H1 = 100000-160000"
+        if (!seen_h2) print "H2 = 300000-360000"
+        if (!seen_h3) print "H3 = 500000-560000"
+        if (!seen_h4) print "H4 = 700000-760000"
+      }
+    ' "$conf" > "$tmp" && mv "$tmp" "$conf"
+    chmod 600 "$conf"
+}
+
 # Setup AmneziaWG configuration directory
 setup_amnezia_config() {
     echo -e "${green}Setting up AmneziaWG configuration...${plain}"
@@ -388,7 +411,8 @@ setup_amnezia_config() {
     mkdir -p ${amnezia_folder}/peers
 
     if [ -f "${amnezia_folder}/awg0.conf" ]; then
-        echo -e "${yellow}Existing AmneziaWG config found, keeping ${amnezia_folder}/awg0.conf${plain}"
+        echo -e "${yellow}Existing AmneziaWG config found, repairing header ranges and keeping ${amnezia_folder}/awg0.conf${plain}"
+        repair_amnezia_config_headers "${amnezia_folder}/awg0.conf"
         return 0
     fi
     

@@ -168,6 +168,20 @@ func TestParseObfuscationParams(t *testing.T) {
 	// Function should handle error gracefully
 }
 
+func TestGenerateValidatedObfuscationParamsNoHeaderOverlap(t *testing.T) {
+	service := NewAmneziaService()
+
+	for i := 0; i < 50; i++ {
+		obf, err := service.GenerateValidatedObfuscationParams()
+		if err != nil {
+			t.Fatalf("GenerateValidatedObfuscationParams returned error: %v", err)
+		}
+		if err := service.ValidateAwg20Params(obf); err != nil {
+			t.Fatalf("generated obfuscation params should be valid: %v", err)
+		}
+	}
+}
+
 // TestGenerateServerConfig tests the server config generation
 func TestGenerateServerConfig(t *testing.T) {
 	service := NewAmneziaService()
