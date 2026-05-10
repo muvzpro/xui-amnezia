@@ -1051,6 +1051,13 @@ install_xui() {
     fi
     chmod +x x-ui bin/xray-linux-$(arch)
 
+    # Install awg-helper.sh to /usr/local/bin/
+    if [ -f "awg-helper.sh" ]; then
+        cp awg-helper.sh /usr/local/bin/awg-helper.sh
+        chmod +x /usr/local/bin/awg-helper.sh
+        echo -e "${green}Installed awg-helper.sh to /usr/local/bin/${plain}"
+    fi
+
     # Update x-ui cli and set permission
     mv -f /usr/bin/x-ui-temp /usr/bin/x-ui
     chmod +x /usr/bin/x-ui

@@ -39,6 +39,7 @@ const (
 	amneziaDockerContainerEnv  = "XUI_AMNEZIA_DOCKER_CONTAINER"
 	amneziaRuntimeEnv          = "XUI_AMNEZIA_RUNTIME"
 	amneziaDefaultContainer    = "3xui_amneziawg"
+	amneziaHelperPath          = "/usr/local/bin/awg-helper"
 )
 
 type AmneziaService struct{}
@@ -991,27 +992,88 @@ func (s *AmneziaService) useDockerRuntime() bool {
 	return false
 }
 
+func (s *AmneziaService) helperStripCommand(args []string) (*exec.Cmd, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("strip command requires exactly one argument")
+	}
+	// Get config from helper
+	getCmd := exec.Command(amneziaHelperPath, "get-config")
+	output, err := getCmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get config: %w", err)
+	}
+	// Strip the config (remove PostUp/PostDown)
+	stripped := s.stripConfig(string(output))
+	// Return command that outputs stripped config
+	cmd := exec.Command("echo", stripped)
+	return cmd, nil
+}
+
+func (s *AmneziaService) stripConfig(config string) string {
+	lines := strings.Split(config, "\n")
+	var result []string
+	inInterface := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "[Interface]" {
+			inInterface = true
+		} else if strings.HasPrefix(trimmed, "[") {
+			inInterface = false
+		}
+		// Skip PostUp/PostDown in Interface section
+		if inInterface && (strings.HasPrefix(trimmed, "PostUp") || strings.HasPrefix(trimmed, "PostDown")) {
+			continue
+		}
+		result = append(result, line)
+	}
+	return strings.Join(result, "\n")
+}
+
+func (s *AmneziaService) runtimeCommand(name string, args ...string) (*exec.Cmd, error) {
+	if s.useDockerRuntime() {
+		// Use helper script for Docker operations
+		if _, err := exec.LookPath(amneziaHelperPath); err != nil {
+			return nil, fmt.Errorf("awg-helper not found: %w", err)
+		}
+		// Map awg commands to helper commands
+		var helperArgs []string
+		switch name {
+		case "awg":
+			if len(args) >= 2 && args[0] == "show" && args[1] == "interfaces" {
+				helperArgs = []string{"check-container"}
+			} else if len(args) >= 3 && args[0] == "show" && args[1] == "all" && args[2] == "dump" {
+				helperArgs = []string{"show-dump"}
+			} else if len(args) >= 1 && args[0] == "genkey" {
+				helperArgs = []string{"gen-key"}
+			} else if len(args) >= 1 && args[0] == "genpsk" {
+				helperArgs = []string{"gen-psk"}
+			} else {
+				return nil, fmt.Errorf("unsupported awg command: %v", args)
+			}
+		case "awg-quick":
+			if len(args) >= 1 && args[0] == "strip" {
+				// For strip, we need to get config and process it
+				return s.helperStripCommand(args[1:])
+			} else {
+				return nil, fmt.Errorf("unsupported awg-quick command: %v", args)
+			}
+		default:
+			return nil, fmt.Errorf("unsupported command: %s", name)
+		}
+		return exec.Command(amneziaHelperPath, helperArgs...), nil
+	}
+	if _, err := exec.LookPath(name); err != nil {
+		return nil, err
+	}
+	return exec.Command(name, args...), nil
+}
+
 func (s *AmneziaService) dockerContainerName() string {
 	name := strings.TrimSpace(os.Getenv(amneziaDockerContainerEnv))
 	if name == "" {
 		return amneziaDefaultContainer
 	}
 	return name
-}
-
-func (s *AmneziaService) runtimeCommand(name string, args ...string) (*exec.Cmd, error) {
-	if s.useDockerRuntime() {
-		if _, err := exec.LookPath("docker"); err != nil {
-			return nil, fmt.Errorf("docker CLI not found: %w", err)
-		}
-		dockerArgs := append([]string{"exec"}, s.dockerContainerName(), name)
-		dockerArgs = append(dockerArgs, args...)
-		return exec.Command("docker", dockerArgs...), nil
-	}
-	if _, err := exec.LookPath(name); err != nil {
-		return nil, err
-	}
-	return exec.Command(name, args...), nil
 }
 
 func (s *AmneziaService) dockerAction(action, interfaceName string) error {
@@ -1042,26 +1104,12 @@ func (s *AmneziaService) dockerAction(action, interfaceName string) error {
 		_ = s.dockerAction("stop", interfaceName)
 		return s.dockerAction("start", interfaceName)
 	case "syncconf":
-		// Hot-reload config without restarting container (PRVTPRO approach)
-		stripCmd := exec.Command("docker", "exec", container, "awg-quick", "strip", configPath)
-		stripped, err := stripCmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("awg-quick strip failed: %w: %s", err, strings.TrimSpace(string(stripped)))
-		}
-		// Write stripped config to temp file inside container
-		tmpPath := fmt.Sprintf("/tmp/.x-ui-awg-sync-%s.conf", interfaceName)
-		writeCmd := exec.Command("docker", "exec", "-i", container, "sh", "-c", fmt.Sprintf("cat > %s", tmpPath))
-		writeCmd.Stdin = strings.NewReader(string(stripped))
-		if _, err := writeCmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("failed to write temp config to container: %w", err)
-		}
-		syncCmd := exec.Command("docker", "exec", container, "awg", "syncconf", interfaceName, tmpPath)
-		output, err := syncCmd.CombinedOutput()
+		// Use helper for hot-reload config without restarting container
+		cmd := exec.Command(amneziaHelperPath, "sync-config", interfaceName)
+		output, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("awg syncconf failed: %w: %s", err, strings.TrimSpace(string(output)))
 		}
-		// Cleanup temp file
-		_ = exec.Command("docker", "exec", container, "rm", "-f", tmpPath).Run()
 		return nil
 	default:
 		return fmt.Errorf("unsupported docker AmneziaWG action: %s", action)
@@ -1261,6 +1309,15 @@ func (s *AmneziaService) writeServerConfig(serverId int) (*model.AmneziaServer, 
 
 	if err := s.writeConfigFile(configPath, config); err != nil {
 		return nil, fmt.Errorf("failed to write config: %w", err)
+	}
+
+	// For Docker runtime, also save config to container
+	if s.useDockerRuntime() {
+		cmd := exec.Command(amneziaHelperPath, "save-config", server.InterfaceName)
+		cmd.Stdin = strings.NewReader(config)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return nil, fmt.Errorf("failed to save config to container: %w: %s", err, strings.TrimSpace(string(output)))
+		}
 	}
 
 	return server, nil
