@@ -21,7 +21,7 @@ xui_service="${XUI_SERVICE:=/etc/systemd/system}"
 amnezia_folder="/etc/amnezia/amneziawg"
 amnezia_docker_dir="/usr/local/x-ui/amnezia-docker"
 amnezia_container="3xui_amneziawg"
-amnezia_image="vnxme/amneziawg-go:latest"
+amnezia_image="3xui-amneziawg:latest"
 
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}Fatal error: ${plain} Please run this script with root privilege \n " && exit 1
@@ -227,9 +227,41 @@ done
 EOF
     chmod +x "${amnezia_docker_dir}/entrypoint.sh"
 
+    cat > "${amnezia_docker_dir}/Dockerfile" << 'EOF'
+FROM golang:1.24.4-alpine AS builder
+
+RUN apk add --no-cache git
+WORKDIR /src
+RUN git clone --depth 1 https://github.com/amnezia-vpn/amneziawg-go.git .
+RUN go mod download \
+  && go mod verify \
+  && CGO_ENABLED=0 go build -ldflags="-s -w" -o /out/amneziawg-go
+
+FROM alpine:3.19
+
+ARG AWGTOOLS_RELEASE="1.0.20250901"
+
+RUN apk add --no-cache bash curl iproute2 iptables unzip \
+  && cd /usr/bin \
+  && curl -fL -o amneziawg-tools.zip "https://github.com/amnezia-vpn/amneziawg-tools/releases/download/v${AWGTOOLS_RELEASE}/alpine-3.19-amneziawg-tools.zip" \
+  && unzip -j amneziawg-tools.zip \
+  && rm -f amneziawg-tools.zip \
+  && chmod +x /usr/bin/awg /usr/bin/awg-quick \
+  && ln -sf /usr/bin/awg /usr/bin/wg \
+  && ln -sf /usr/bin/awg-quick /usr/bin/wg-quick
+
+COPY --from=builder /out/amneziawg-go /usr/bin/amneziawg-go
+
+ENV WG_QUICK_USERSPACE_IMPLEMENTATION=amneziawg-go
+WORKDIR /etc/amnezia/amneziawg
+EOF
+
     cat > "${amnezia_docker_dir}/docker-compose.yml" << EOF
 services:
   amneziawg:
+    build:
+      context: ${amnezia_docker_dir}
+      dockerfile: Dockerfile
     image: ${amnezia_image}
     container_name: ${amnezia_container}
     network_mode: host

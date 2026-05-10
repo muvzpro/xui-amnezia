@@ -179,6 +179,39 @@ delete_script() {
     exit 1
 }
 
+uninstall_amnezia_docker() {
+    local amnezia_container="3xui_amneziawg"
+    local amnezia_image="3xui-amneziawg:latest"
+    local amnezia_docker_dir="${xui_folder}/amnezia-docker"
+    local amnezia_config_dir="/etc/amnezia"
+
+    if command -v docker > /dev/null 2>&1; then
+        if [ -f "${amnezia_docker_dir}/docker-compose.yml" ]; then
+            if docker compose version > /dev/null 2>&1; then
+                docker compose -f "${amnezia_docker_dir}/docker-compose.yml" down --remove-orphans > /dev/null 2>&1 || true
+            elif command -v docker-compose > /dev/null 2>&1; then
+                docker-compose -f "${amnezia_docker_dir}/docker-compose.yml" down --remove-orphans > /dev/null 2>&1 || true
+            fi
+        fi
+
+        docker rm -f "${amnezia_container}" > /dev/null 2>&1 || true
+        docker image rm "${amnezia_image}" > /dev/null 2>&1 || true
+    fi
+
+    rm "${amnezia_docker_dir}" -rf
+    rm "${amnezia_config_dir}" -rf
+
+    if [ -f "/etc/default/x-ui" ]; then
+        sed -i '/^XUI_AMNEZIA_RUNTIME=/d;/^XUI_AMNEZIA_DOCKER_CONTAINER=/d' /etc/default/x-ui
+    fi
+    if [ -f "/etc/sysconfig/x-ui" ]; then
+        sed -i '/^XUI_AMNEZIA_RUNTIME=/d;/^XUI_AMNEZIA_DOCKER_CONTAINER=/d' /etc/sysconfig/x-ui
+    fi
+    if [ -f "/etc/conf.d/x-ui" ]; then
+        sed -i '/^XUI_AMNEZIA_RUNTIME=/d;/^XUI_AMNEZIA_DOCKER_CONTAINER=/d' /etc/conf.d/x-ui
+    fi
+}
+
 uninstall() {
     confirm "Are you sure you want to uninstall the panel? xray will also uninstalled!" "n"
     if [[ $? != 0 ]]; then
@@ -199,6 +232,8 @@ uninstall() {
         systemctl daemon-reload
         systemctl reset-failed
     fi
+
+    uninstall_amnezia_docker
 
     rm /etc/x-ui/ -rf
     rm ${xui_folder}/ -rf

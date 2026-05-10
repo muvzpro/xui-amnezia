@@ -1,6 +1,9 @@
 services:
   amneziawg:
-    image: vnxme/amneziawg-go:latest
+    build:
+      context: ./docker/amneziawg
+      dockerfile: Dockerfile
+    image: 3xui-amneziawg:latest
     container_name: 3xui_amneziawg
     network_mode: host
     cap_add:
