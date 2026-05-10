@@ -267,7 +267,7 @@ func TestGenerateServerConfigWithoutObfuscation(t *testing.T) {
 		Id:              1,
 		Name:            "Test Server",
 		InterfaceName:   "amnezia0",
-		ListenPort:      51820,
+		ListenPort:      52281,
 		PrivateKey:      "privateKey",
 		PublicKey:       "publicKey",
 		Address:         "10.0.0.1/24",

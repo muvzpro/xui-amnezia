@@ -34,6 +34,10 @@ const (
 	AmneziaOnlineWindow        = 3 * time.Minute
 	amneziaConfigDir           = "/etc/amnezia/amneziawg"
 	amneziaSystemdUnitPath     = "/etc/systemd/system/amneziawg@.service"
+	amneziaRuntimeDocker       = "docker"
+	amneziaDockerContainerEnv  = "XUI_AMNEZIA_DOCKER_CONTAINER"
+	amneziaRuntimeEnv          = "XUI_AMNEZIA_RUNTIME"
+	amneziaDefaultContainer    = "3xui_amneziawg"
 )
 
 type AmneziaService struct{}
@@ -725,10 +729,10 @@ func (s *AmneziaService) publicKeyFromPrivate(privateKey string) string {
 	if privateKey == "" {
 		return ""
 	}
-	if _, err := exec.LookPath("awg"); err != nil {
+	cmd, err := s.runtimeCommand("awg", "pubkey")
+	if err != nil {
 		return ""
 	}
-	cmd := exec.Command("awg", "pubkey")
 	cmd.Stdin = strings.NewReader(privateKey)
 	output, err := cmd.Output()
 	if err != nil {
@@ -758,6 +762,21 @@ func (s *AmneziaService) IsServerRunning(interfaceName string) bool {
 	if interfaceName == "" {
 		return false
 	}
+	if s.useDockerRuntime() {
+		cmd, err := s.runtimeCommand("awg", "show", "interfaces")
+		if err == nil {
+			output, err := cmd.Output()
+			if err == nil {
+				for _, name := range strings.Fields(string(output)) {
+					if name == interfaceName {
+						return true
+					}
+				}
+			}
+		}
+		cmd, err = s.runtimeCommand("ip", "link", "show", "dev", interfaceName)
+		return err == nil && cmd.Run() == nil
+	}
 	if _, err := exec.LookPath("systemctl"); err == nil {
 		unit := fmt.Sprintf("amneziawg@%s.service", interfaceName)
 		if err := exec.Command("systemctl", "is-active", "--quiet", unit).Run(); err == nil {
@@ -773,10 +792,11 @@ func (s *AmneziaService) IsServerRunning(interfaceName string) bool {
 }
 
 func (s *AmneziaService) readAwgRuntime() (map[string]awgPeerRuntime, error) {
-	if _, err := exec.LookPath("awg"); err != nil {
+	cmd, err := s.runtimeCommand("awg", "show", "all", "dump")
+	if err != nil {
 		return nil, err
 	}
-	output, err := exec.Command("awg", "show", "all", "dump").Output()
+	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
@@ -917,6 +937,9 @@ func (s *AmneziaService) RestartServer(id int) error {
 }
 
 func (s *AmneziaService) systemctlAction(action, interfaceName string) error {
+	if s.useDockerRuntime() {
+		return s.dockerAction(action, interfaceName)
+	}
 	unit := fmt.Sprintf("amneziawg@%s.service", interfaceName)
 	if _, err := exec.LookPath("systemctl"); err != nil {
 		return fmt.Errorf("systemctl not found")
@@ -930,6 +953,66 @@ func (s *AmneziaService) systemctlAction(action, interfaceName string) error {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+func (s *AmneziaService) useDockerRuntime() bool {
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv(amneziaRuntimeEnv)))
+	return mode == amneziaRuntimeDocker || strings.TrimSpace(os.Getenv(amneziaDockerContainerEnv)) != ""
+}
+
+func (s *AmneziaService) dockerContainerName() string {
+	name := strings.TrimSpace(os.Getenv(amneziaDockerContainerEnv))
+	if name == "" {
+		return amneziaDefaultContainer
+	}
+	return name
+}
+
+func (s *AmneziaService) runtimeCommand(name string, args ...string) (*exec.Cmd, error) {
+	if s.useDockerRuntime() {
+		if _, err := exec.LookPath("docker"); err != nil {
+			return nil, fmt.Errorf("docker CLI not found: %w", err)
+		}
+		dockerArgs := append([]string{"exec"}, s.dockerContainerName(), name)
+		dockerArgs = append(dockerArgs, args...)
+		return exec.Command("docker", dockerArgs...), nil
+	}
+	if _, err := exec.LookPath(name); err != nil {
+		return nil, err
+	}
+	return exec.Command(name, args...), nil
+}
+
+func (s *AmneziaService) dockerAction(action, interfaceName string) error {
+	if _, err := exec.LookPath("docker"); err != nil {
+		return fmt.Errorf("docker CLI not found: %w", err)
+	}
+	container := s.dockerContainerName()
+	configPath := filepath.Join(amneziaConfigDir, fmt.Sprintf("%s.conf", interfaceName))
+	switch action {
+	case "enable", "disable":
+		return nil
+	case "start":
+		_ = exec.Command("docker", "start", container).Run()
+		cmd := exec.Command("docker", "exec", container, "awg-quick", "up", configPath)
+		output, err := cmd.CombinedOutput()
+		if err != nil && !s.IsServerRunning(interfaceName) {
+			return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
+		}
+		return nil
+	case "stop":
+		cmd := exec.Command("docker", "exec", container, "awg-quick", "down", configPath)
+		output, err := cmd.CombinedOutput()
+		if err != nil && s.IsServerRunning(interfaceName) {
+			return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
+		}
+		return nil
+	case "restart":
+		_ = s.dockerAction("stop", interfaceName)
+		return s.dockerAction("start", interfaceName)
+	default:
+		return fmt.Errorf("unsupported docker AmneziaWG action: %s", action)
+	}
 }
 
 // CalculatePeerExpiry computes the expiration timestamp from expiry days.
@@ -1044,20 +1127,15 @@ func (s *AmneziaService) applyServerConfig(server *model.AmneziaServer, configPa
 }
 
 func (s *AmneziaService) syncServerConfig(interfaceName, configPath string) error {
-	awgPath, err := exec.LookPath("awg")
+	stripCmd, err := s.runtimeCommand("awg-quick", "strip", configPath)
 	if err != nil {
 		return err
 	}
-	awgQuickPath, err := exec.LookPath("awg-quick")
-	if err != nil {
-		return err
-	}
-	stripCmd := exec.Command(awgQuickPath, "strip", configPath)
 	stripped, err := stripCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("awg-quick strip failed: %w: %s", err, strings.TrimSpace(string(stripped)))
 	}
-	tmp, err := os.CreateTemp("", "x-ui-awg-sync-*.conf")
+	tmp, err := os.CreateTemp(amneziaConfigDir, fmt.Sprintf(".x-ui-awg-sync-%s-*.conf", interfaceName))
 	if err != nil {
 		return err
 	}
@@ -1070,7 +1148,10 @@ func (s *AmneziaService) syncServerConfig(interfaceName, configPath string) erro
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	syncCmd := exec.Command(awgPath, "syncconf", interfaceName, tmpName)
+	syncCmd, err := s.runtimeCommand("awg", "syncconf", interfaceName, tmpName)
+	if err != nil {
+		return err
+	}
 	output, err := syncCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("awg syncconf failed: %w: %s", err, strings.TrimSpace(string(output)))

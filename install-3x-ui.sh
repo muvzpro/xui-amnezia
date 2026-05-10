@@ -19,9 +19,9 @@ RELEASE_URL="https://api.github.com/repos/muvzpro/xui-amnezia/releases/latest"
 xui_folder="${XUI_MAIN_FOLDER:=/usr/local/x-ui}"
 xui_service="${XUI_SERVICE:=/etc/systemd/system}"
 amnezia_folder="/etc/amnezia/amneziawg"
-amneziawg_bin="/usr/local/bin/amneziawg-go"
-awg_bin="/usr/local/bin/awg"
-awg_quick_bin="/usr/local/bin/awg-quick"
+amnezia_docker_dir="/usr/local/x-ui/amnezia-docker"
+amnezia_container="3xui_amneziawg"
+amnezia_image="vnxme/amneziawg-go:latest"
 
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}Fatal error: ${plain} Please run this script with root privilege \n " && exit 1
@@ -144,83 +144,150 @@ install_acme() {
     return 0
 }
 
-# Install AmneziaWG (amneziawg-go and amneziawg-tools)
-install_amneziawg() {
-    echo -e "${green}Installing AmneziaWG...${plain}"
-    
-    # Check if already installed
-    if command -v awg &> /dev/null && command -v awg-quick &> /dev/null && command -v amneziawg-go &> /dev/null; then
-        echo -e "${green}AmneziaWG is already installed${plain}"
-        awg --version 2>/dev/null || true
-        return 0
+# Install Docker runtime for AmneziaWG container
+install_docker_runtime() {
+    echo -e "${green}Preparing Docker runtime for AmneziaWG...${plain}"
+
+    if ! command -v docker > /dev/null 2>&1; then
+        case "${release}" in
+            ubuntu | debian | armbian)
+                apt-get update && apt-get install -y -q docker.io docker-compose-plugin
+                ;;
+            fedora | amzn | virtuozzo | rhel | almalinux | rocky | ol | centos)
+                (dnf install -y -q docker docker-compose-plugin || yum install -y docker docker-compose-plugin)
+                ;;
+            arch | manjaro | parch)
+                pacman -Syu --noconfirm docker docker-compose
+                ;;
+            opensuse-tumbleweed | opensuse-leap)
+                zypper -q install -y docker docker-compose
+                ;;
+            alpine)
+                apk add docker docker-cli-compose
+                ;;
+            *)
+                apt-get update && apt-get install -y -q docker.io docker-compose-plugin
+                ;;
+        esac
     fi
-    
-    # Create build directory
-    mkdir -p /opt/amneziawg-build
-    cd /opt/amneziawg-build
-    
-    # Install amneziawg-go (userspace implementation)
-    echo -e "${yellow}Building amneziawg-go...${plain}"
-    if [ ! -d "amneziawg-go" ]; then
-        git clone https://github.com/amnezia-vpn/amneziawg-go.git
-    fi
-    cd amneziawg-go
-    
-    # Build with Go
-    export CGO_ENABLED=0
-    go build -ldflags="-s -w" -o amneziawg-go
-    if [ $? -ne 0 ]; then
-        echo -e "${red}Failed to build amneziawg-go${plain}"
+
+    systemctl enable --now docker 2>/dev/null || service docker start 2>/dev/null || rc-service docker start 2>/dev/null || true
+
+    if ! docker info > /dev/null 2>&1; then
+        echo -e "${red}Docker is not running or not available${plain}"
         exit 1
     fi
-    install -m 755 amneziawg-go ${amneziawg_bin}
-    echo -e "${green}amneziawg-go installed to ${amneziawg_bin}${plain}"
-    
-    # Install amneziawg-tools (awg, awg-quick)
-    echo -e "${yellow}Building amneziawg-tools...${plain}"
-    cd /opt/amneziawg-build
-    if [ ! -d "amneziawg-tools" ]; then
-        git clone https://github.com/amnezia-vpn/amneziawg-tools.git
-    fi
-    cd amneziawg-tools/src
-    
-    # Build tools
-    make
-    if [ $? -ne 0 ]; then
-        echo -e "${red}Failed to build amneziawg-tools${plain}"
+}
+
+docker_compose() {
+    if docker compose version > /dev/null 2>&1; then
+        docker compose "$@"
+    elif command -v docker-compose > /dev/null 2>&1; then
+        docker-compose "$@"
+    else
+        echo -e "${red}Docker Compose plugin is not installed${plain}"
         exit 1
     fi
-    make install
-    echo -e "${green}amneziawg-tools installed${plain}"
-    
-    # Verify installation
-    cd ~
-    if ! command -v awg &> /dev/null; then
-        echo -e "${red}awg command not found after installation${plain}"
+}
+
+write_amnezia_docker_assets() {
+    mkdir -p "${amnezia_docker_dir}" "${amnezia_folder}"
+    cat > "${amnezia_docker_dir}/entrypoint.sh" << 'EOF'
+#!/bin/sh
+set -eu
+
+CONFIG_DIR="${AMNEZIA_CONFIG_DIR:-/etc/amnezia/amneziawg}"
+mkdir -p "$CONFIG_DIR"
+
+up_all() {
+  for conf in "$CONFIG_DIR"/*.conf; do
+    [ -f "$conf" ] || continue
+    iface="$(basename "$conf" .conf)"
+    if awg show interfaces 2>/dev/null | tr ' ' '\n' | grep -qx "$iface"; then
+      continue
+    fi
+    awg-quick up "$conf" || true
+  done
+}
+
+down_all() {
+  for iface in $(awg show interfaces 2>/dev/null || true); do
+    conf="$CONFIG_DIR/$iface.conf"
+    awg-quick down "$conf" || awg-quick down "$iface" || true
+  done
+}
+
+trap 'down_all; exit 0' INT TERM
+
+up_all
+while :; do
+  sleep 3600 &
+  wait $!
+done
+EOF
+    chmod +x "${amnezia_docker_dir}/entrypoint.sh"
+
+    cat > "${amnezia_docker_dir}/docker-compose.yml" << EOF
+services:
+  amneziawg:
+    image: ${amnezia_image}
+    container_name: ${amnezia_container}
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ${amnezia_folder}/:/etc/amnezia/amneziawg/
+      - ${amnezia_docker_dir}/entrypoint.sh:/entrypoint.sh:ro
+    environment:
+      LOG_LEVEL: "info"
+      WG_QUICK_USERSPACE_IMPLEMENTATION: "amneziawg-go"
+    entrypoint:
+      - /bin/sh
+      - /entrypoint.sh
+    restart: unless-stopped
+EOF
+}
+
+start_amnezia_container() {
+    write_amnezia_docker_assets
+    docker_compose -f "${amnezia_docker_dir}/docker-compose.yml" up -d
+    if ! docker ps --format '{{.Names}}' | grep -qx "${amnezia_container}"; then
+        echo -e "${red}Failed to start AmneziaWG Docker container${plain}"
         exit 1
     fi
-    if ! command -v awg-quick &> /dev/null; then
-        echo -e "${red}awg-quick command not found after installation${plain}"
-        exit 1
+}
+
+configure_xui_amnezia_env() {
+    local env_file="/etc/default/x-ui"
+    case "${release}" in
+        fedora | amzn | virtuozzo | rhel | almalinux | rocky | ol | centos)
+            env_file="/etc/sysconfig/x-ui"
+            ;;
+        arch | manjaro | parch)
+            env_file="/etc/conf.d/x-ui"
+            ;;
+    esac
+    mkdir -p "$(dirname "${env_file}")"
+    touch "${env_file}"
+    if grep -q '^XUI_AMNEZIA_RUNTIME=' "${env_file}" 2>/dev/null; then
+        sed -i 's/^XUI_AMNEZIA_RUNTIME=.*/XUI_AMNEZIA_RUNTIME=docker/' "${env_file}"
+    else
+        echo 'XUI_AMNEZIA_RUNTIME=docker' >> "${env_file}"
     fi
-    if [ ! -f "${amneziawg_bin}" ]; then
-        echo -e "${red}amneziawg-go binary not found after installation${plain}"
-        exit 1
+    if grep -q '^XUI_AMNEZIA_DOCKER_CONTAINER=' "${env_file}" 2>/dev/null; then
+        sed -i "s/^XUI_AMNEZIA_DOCKER_CONTAINER=.*/XUI_AMNEZIA_DOCKER_CONTAINER=${amnezia_container}/" "${env_file}"
+    else
+        echo "XUI_AMNEZIA_DOCKER_CONTAINER=${amnezia_container}" >> "${env_file}"
     fi
-    
-    echo -e "${green}AmneziaWG installed successfully!${plain}"
-    echo -e "  ${green}awg: $(command -v awg)${plain}"
-    echo -e "  ${green}awg-quick: $(command -v awg-quick)${plain}"
-    echo -e "  ${green}amneziawg-go: ${amneziawg_bin}${plain}"
-    
-    # Cleanup build directory
-    rm -rf /opt/amneziawg-build
 }
 
 # Generate AmneziaWG server keys using awg
 generate_awg_keys() {
-    local private_key=$(awg genkey)
-    local public_key=$(echo "$private_key" | awg pubkey)
+    local private_key=$(docker exec "${amnezia_container}" awg genkey)
+    local public_key=$(echo "$private_key" | docker exec -i "${amnezia_container}" awg pubkey)
     
     echo "$private_key"
     echo "$public_key"
@@ -287,6 +354,11 @@ setup_amnezia_config() {
     
     mkdir -p ${amnezia_folder}
     mkdir -p ${amnezia_folder}/peers
+
+    if [ -f "${amnezia_folder}/awg0.conf" ]; then
+        echo -e "${yellow}Existing AmneziaWG config found, keeping ${amnezia_folder}/awg0.conf${plain}"
+        return 0
+    fi
     
     # Generate server keys using awg
     local keys=$(generate_awg_keys)
@@ -346,65 +418,30 @@ EOF
     chmod 600 ${amnezia_folder}/awg0.conf
 }
 
-# Create systemd service for AmneziaWG
-create_amnezia_service() {
-    echo -e "${green}Creating AmneziaWG systemd service...${plain}"
-    
-    # Create amneziawg@.service template for multiple interfaces
-    cat > /etc/systemd/system/amneziawg@.service << 'EOF'
-[Unit]
-Description=AmneziaWG interface %i
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=WG_QUICK_USERSPACE_IMPLEMENTATION=amneziawg-go
-ExecStart=/bin/sh -c 'exec awg-quick up /etc/amnezia/amneziawg/%i.conf'
-ExecStop=/bin/sh -c 'exec awg-quick down /etc/amnezia/amneziawg/%i.conf'
-ExecReload=/bin/sh -c 'awg-quick down /etc/amnezia/amneziawg/%i.conf || true; exec awg-quick up /etc/amnezia/amneziawg/%i.conf'
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    chmod 644 /etc/systemd/system/amneziawg@.service
-    systemctl daemon-reload
-    
-    echo -e "${green}AmneziaWG systemd service created${plain}"
-    echo -e "  ${green}Service: amneziawg@awg0.service${plain}"
-    echo -e "  ${green}Config: ${amnezia_folder}/awg0.conf${plain}"
-}
-
 # Verify AmneziaWG installation
 verify_amneziawg_installation() {
     echo -e "${green}Verifying AmneziaWG installation...${plain}"
     
     local errors=0
     
-    # Check awg binary
-    if command -v awg &> /dev/null; then
-        echo -e "  ${green}✓ awg: $(command -v awg)${plain}"
+    if docker ps --format '{{.Names}}' | grep -qx "${amnezia_container}"; then
+        echo -e "  ${green}✓ Container: ${amnezia_container}${plain}"
     else
-        echo -e "  ${red}✗ awg not found${plain}"
+        echo -e "  ${red}✗ Container ${amnezia_container} is not running${plain}"
         errors=$((errors + 1))
     fi
     
-    # Check awg-quick binary
-    if command -v awg-quick &> /dev/null; then
-        echo -e "  ${green}✓ awg-quick: $(command -v awg-quick)${plain}"
+    if docker exec "${amnezia_container}" awg --version > /dev/null 2>&1; then
+        echo -e "  ${green}✓ awg inside container${plain}"
     else
-        echo -e "  ${red}✗ awg-quick not found${plain}"
+        echo -e "  ${red}✗ awg not available inside container${plain}"
         errors=$((errors + 1))
     fi
     
-    # Check amneziawg-go binary
-    if [ -f "${amneziawg_bin}" ]; then
-        echo -e "  ${green}✓ amneziawg-go: ${amneziawg_bin}${plain}"
+    if docker exec "${amnezia_container}" sh -c 'command -v awg-quick' > /dev/null 2>&1; then
+        echo -e "  ${green}✓ awg-quick inside container${plain}"
     else
-        echo -e "  ${red}✗ amneziawg-go not found${plain}"
+        echo -e "  ${red}✗ awg-quick not available inside container${plain}"
         errors=$((errors + 1))
     fi
     
@@ -416,11 +453,11 @@ verify_amneziawg_installation() {
         errors=$((errors + 1))
     fi
     
-    # Check systemd service
-    if [ -f "/etc/systemd/system/amneziawg@.service" ]; then
-        echo -e "  ${green}✓ Service: /etc/systemd/system/amneziawg@.service${plain}"
+    # Check x-ui environment file
+    if grep -Rqs '^XUI_AMNEZIA_RUNTIME=docker' /etc/default/x-ui /etc/sysconfig/x-ui /etc/conf.d/x-ui 2>/dev/null; then
+        echo -e "  ${green}✓ x-ui Amnezia runtime: docker${plain}"
     else
-        echo -e "  ${red}✗ Service file not found${plain}"
+        echo -e "  ${red}✗ x-ui Docker runtime environment not configured${plain}"
         errors=$((errors + 1))
     fi
     
@@ -956,33 +993,27 @@ install_xui() {
     chmod +x /usr/bin/x-ui
     mkdir -p /var/log/x-ui
     
-    # Install AmneziaWG (amneziawg-go and amneziawg-tools)
-    install_amneziawg
+    # Install and start AmneziaWG Docker runtime
+    install_docker_runtime
+    configure_xui_amnezia_env
+    start_amnezia_container
     
     # Setup AmneziaWG configuration
     setup_amnezia_config
     
-    # Create AmneziaWG systemd service
-    create_amnezia_service
-    
     # Verify AmneziaWG installation
     verify_amneziawg_installation
     
-    # Enable and start AmneziaWG service
-    echo -e "${green}Enabling AmneziaWG service...${plain}"
-    systemctl daemon-reload
-    systemctl enable amneziawg@awg0.service
-    
-    # Start AmneziaWG if config exists
+    # Start AmneziaWG interface inside Docker if config exists
     if [ -f "${amnezia_folder}/awg0.conf" ]; then
-        echo -e "${green}Starting AmneziaWG service...${plain}"
-        systemctl start amneziawg@awg0.service || echo -e "${yellow}Note: AmneziaWG service may need manual configuration${plain}"
+        echo -e "${green}Starting AmneziaWG interface in Docker...${plain}"
+        docker exec "${amnezia_container}" awg-quick up "${amnezia_folder}/awg0.conf" 2>/dev/null || true
         
-        # Verify service is running
-        if systemctl is-active --quiet amneziawg@awg0.service; then
-            echo -e "${green}✓ AmneziaWG service is running${plain}"
+        # Verify interface is running
+        if docker exec "${amnezia_container}" awg show interfaces 2>/dev/null | tr ' ' '\n' | grep -qx "awg0"; then
+            echo -e "${green}✓ AmneziaWG container interface awg0 is running${plain}"
         else
-            echo -e "${yellow}⚠ AmneziaWG service not running - check configuration${plain}"
+            echo -e "${yellow}⚠ AmneziaWG awg0 is not running - check container logs${plain}"
         fi
     fi
 
@@ -1111,9 +1142,9 @@ install_xui() {
     echo -e "│  ${blue}x-ui uninstall${plain}    - Uninstall                        │"
     echo -e "│                                                       │"
     echo -e "│  ${green}AmneziaWG Commands:${plain}                                 │"
-    echo -e "│  ${blue}systemctl start amnezia${plain}   - Start AmneziaWG          │"
-    echo -e "│  ${blue}systemctl stop amnezia${plain}    - Stop AmneziaWG           │"
-    echo -e "│  ${blue}systemctl status amnezia${plain}  - AmneziaWG Status         │"
+    echo -e "│  ${blue}docker start ${amnezia_container}${plain} - Start AmneziaWG   │"
+    echo -e "│  ${blue}docker stop ${amnezia_container}${plain}  - Stop AmneziaWG    │"
+    echo -e "│  ${blue}docker logs ${amnezia_container}${plain}  - AmneziaWG Logs    │"
     echo -e "└───────────────────────────────────────────────────────┘"
 }
 
