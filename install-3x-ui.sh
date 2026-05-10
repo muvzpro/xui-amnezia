@@ -272,9 +272,6 @@ services:
       - NET_RAW
     devices:
       - /dev/net/tun:/dev/net/tun
-    sysctls:
-      - net.ipv4.ip_forward=1
-      - net.ipv6.conf.all.forwarding=1
     volumes:
       - ${amnezia_folder}/:/etc/amnezia/amneziawg/
       - /lib/modules:/lib/modules:ro
@@ -299,6 +296,17 @@ start_amnezia_container() {
 }
 
 configure_xui_amnezia_env() {
+    # Configure required sysctls for AmneziaWG
+    echo "Configuring system sysctls for AmneziaWG..."
+    if [ -w /proc/sys/net/ipv4/ip_forward ]; then
+        echo 1 > /proc/sys/net/ipv4/ip_forward
+        echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+    fi
+    if [ -w /proc/sys/net/ipv6/conf/all/forwarding ]; then
+        echo 1 > /proc/sys/net/ipv6/conf/all/forwarding
+        echo "net.ipv6.conf.all.forwarding=1" >> /etc/sysctl.conf
+    fi
+    
     local env_file="/etc/default/x-ui"
     case "${release}" in
         fedora | amzn | virtuozzo | rhel | almalinux | rocky | ol | centos)
