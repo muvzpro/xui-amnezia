@@ -719,20 +719,51 @@ install_xui() {
 
     # Download resources from new repository
     if [ $# == 0 ]; then
-        tag_version=$(curl -Ls "https://api.github.com/repos/muvzpro/xui-amnezia/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        tag_version=$(curl -Ls "https://api.github.com/repos/muvzpro/xui-amnezia/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        
+        # If no releases in muvzpro/xui-amnezia, try original 3x-ui releases
+        if [[ ! -n "$tag_version" ]]; then
+            echo -e "${yellow}No releases found in muvzpro/xui-amnezia, trying original 3x-ui releases...${plain}"
+            tag_version=$(curl -Ls "https://api.github.com/repos/MHSanaei/3x-ui/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        fi
+        
         if [[ ! -n "$tag_version" ]]; then
             echo -e "${yellow}Trying to fetch version with IPv4...${plain}"
-            tag_version=$(curl -4 -Ls "https://api.github.com/repos/muvzpro/xui-amnezia/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+            tag_version=$(curl -4 -Ls "https://api.github.com/repos/muvzpro/xui-amnezia/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+            
             if [[ ! -n "$tag_version" ]]; then
-                echo -e "${red}Failed to fetch x-ui version, it may be due to GitHub API restrictions, please try it later${plain}"
+                tag_version=$(curl -4 -Ls "https://api.github.com/repos/MHSanaei/3x-ui/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+            fi
+            
+            if [[ ! -n "$tag_version" ]]; then
+                echo -e "${red}Failed to fetch x-ui version from both repositories.${plain}"
+                echo -e "${yellow}This could be due to:${plain}"
+                echo -e "${yellow}  1. GitHub API rate limit (try again later)${plain}"
+                echo -e "${yellow}  2. No releases in muvzpro/xui-amnezia repository${plain}"
+                echo -e "${yellow}  3. Network connectivity issues${plain}"
+                echo ""
+                echo -e "${green}To create a release in your repository:${plain}"
+                echo -e "${green}  1. Go to https://github.com/muvzpro/xui-amnezia/releases${plain}"
+                echo -e "${green}  2. Click 'Create a new release'${plain}"
+                echo -e "${green}  3. Tag: v1.0.0 (or any version)${plain}"
+                echo -e "${green}  4. Upload compiled binaries${plain}"
+                echo ""
+                echo -e "${yellow}Or use GitHub Actions to build releases automatically.${plain}"
                 exit 1
             fi
         fi
         echo -e "Got x-ui latest version: ${tag_version}, beginning the installation..."
-        curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz https://github.com/muvzpro/xui-amnezia/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz
+        
+        # Try downloading from muvzpro/xui-amnezia first
+        curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz https://github.com/muvzpro/xui-amnezia/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz 2>/dev/null
         if [[ $? -ne 0 ]]; then
-            echo -e "${red}Downloading x-ui failed, please be sure that your server can access GitHub ${plain}"
-            exit 1
+            echo -e "${yellow}Download from muvzpro/xui-amnezia failed, trying MHSanaei/3x-ui...${plain}"
+            curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz https://github.com/MHSanaei/3x-ui/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz
+            if [[ $? -ne 0 ]]; then
+                echo -e "${red}Downloading x-ui failed from both repositories${plain}"
+                echo -e "${red}Please ensure your server can access GitHub${plain}"
+                exit 1
+            fi
         fi
     else
         tag_version=$1
@@ -740,8 +771,13 @@ install_xui() {
         echo -e "Beginning to install x-ui $1"
         curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz ${url}
         if [[ $? -ne 0 ]]; then
-            echo -e "${red}Download x-ui $1 failed, please check if the version exists ${plain}"
-            exit 1
+            echo -e "${yellow}Download from muvzpro/xui-amnezia failed, trying MHSanaei/3x-ui...${plain}"
+            url="https://github.com/MHSanaei/3x-ui/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz"
+            curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz ${url}
+            if [[ $? -ne 0 ]]; then
+                echo -e "${red}Download x-ui $1 failed from both repositories${plain}"
+                exit 1
+            fi
         fi
     fi
     
