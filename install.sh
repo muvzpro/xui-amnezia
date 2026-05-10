@@ -799,14 +799,16 @@ install_x-ui() {
 
     # Download resources from muvzpro/xui-amnezia repository
     if [ $# == 0 ]; then
-        tag_version=$(curl -Ls "https://api.github.com/repos/muvzpro/xui-amnezia/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        # Try to get latest version from GitHub API
+        tag_version=$(curl -Ls "https://api.github.com/repos/muvzpro/xui-amnezia/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
         if [[ ! -n "$tag_version" ]]; then
             echo -e "${yellow}Trying to fetch version with IPv4...${plain}"
-            tag_version=$(curl -4 -Ls "https://api.github.com/repos/muvzpro/xui-amnezia/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-            if [[ ! -n "$tag_version" ]]; then
-                echo -e "${red}Failed to fetch x-ui version, it may be due to GitHub API restrictions, please try it later${plain}"
-                exit 1
-            fi
+            tag_version=$(curl -4 -Ls "https://api.github.com/repos/muvzpro/xui-amnezia/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        fi
+        # Fallback: use hardcoded latest version if API is unavailable
+        if [[ ! -n "$tag_version" ]]; then
+            echo -e "${yellow}GitHub API unavailable, using default version v1.1.0${plain}"
+            tag_version="v1.1.0"
         fi
         echo -e "Got x-ui latest version: ${tag_version}, beginning the installation..."
         curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz https://github.com/muvzpro/xui-amnezia/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz

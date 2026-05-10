@@ -899,20 +899,8 @@ install_xui() {
             fi
             
             if [[ ! -n "$tag_version" ]]; then
-                echo -e "${red}Failed to fetch x-ui version from both repositories.${plain}"
-                echo -e "${yellow}This could be due to:${plain}"
-                echo -e "${yellow}  1. GitHub API rate limit (try again later)${plain}"
-                echo -e "${yellow}  2. No releases in muvzpro/xui-amnezia repository${plain}"
-                echo -e "${yellow}  3. Network connectivity issues${plain}"
-                echo ""
-                echo -e "${green}To create a release in your repository:${plain}"
-                echo -e "${green}  1. Go to https://github.com/muvzpro/xui-amnezia/releases${plain}"
-                echo -e "${green}  2. Click 'Create a new release'${plain}"
-                echo -e "${green}  3. Tag: v1.0.0 (or any version)${plain}"
-                echo -e "${green}  4. Upload compiled binaries${plain}"
-                echo ""
-                echo -e "${yellow}Or use GitHub Actions to build releases automatically.${plain}"
-                exit 1
+                echo -e "${yellow}GitHub API unavailable, using default version v1.1.0${plain}"
+                tag_version="v1.1.0"
             fi
         fi
         echo -e "Got x-ui latest version: ${tag_version}, beginning the installation..."
