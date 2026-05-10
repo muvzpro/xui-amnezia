@@ -774,6 +774,11 @@ func (s *AmneziaService) IsServerRunning(interfaceName string) bool {
 		return false
 	}
 	if s.useDockerRuntime() {
+		// Check if container is running first
+		container := s.dockerContainerName()
+		if out, _ := exec.Command("docker", "inspect", "--format={{.State.Status}}", container).Output(); strings.TrimSpace(string(out)) != "running" {
+			return false
+		}
 		cmd, err := s.runtimeCommand("awg", "show", "interfaces")
 		if err == nil {
 			output, err := cmd.Output()
@@ -785,8 +790,7 @@ func (s *AmneziaService) IsServerRunning(interfaceName string) bool {
 				}
 			}
 		}
-		cmd, err = s.runtimeCommand("ip", "link", "show", "dev", interfaceName)
-		return err == nil && cmd.Run() == nil
+		return false
 	}
 	if _, err := exec.LookPath("systemctl"); err == nil {
 		unit := fmt.Sprintf("amneziawg@%s.service", interfaceName)
@@ -967,8 +971,24 @@ func (s *AmneziaService) systemctlAction(action, interfaceName string) error {
 }
 
 func (s *AmneziaService) useDockerRuntime() bool {
+	// Explicit override via environment variable
 	mode := strings.ToLower(strings.TrimSpace(os.Getenv(amneziaRuntimeEnv)))
-	return mode == amneziaRuntimeDocker || strings.TrimSpace(os.Getenv(amneziaDockerContainerEnv)) != ""
+	if mode == amneziaRuntimeDocker {
+		return true
+	}
+	if mode == "native" || mode == "systemd" {
+		return false
+	}
+	// Auto-detect: if docker is available and the amneziawg container exists, use docker mode
+	if _, err := exec.LookPath("docker"); err == nil {
+		container := s.dockerContainerName()
+		cmd := exec.Command("docker", "ps", "-a", "--filter", "name=^"+container+"$", "--format", "{{.Names}}")
+		output, _ := cmd.Output()
+		if strings.TrimSpace(string(output)) == container {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *AmneziaService) dockerContainerName() string {

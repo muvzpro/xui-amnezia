@@ -1,4 +1,21 @@
 services:
+  x-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: 3xui-amnezia:latest
+    container_name: 3xui_panel
+    network_mode: host
+    volumes:
+      - /etc/x-ui/:/etc/x-ui/
+      - /etc/amnezia/amneziawg/:/etc/amnezia/amneziawg/
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      XUI_DB_FOLDER: "/etc/x-ui"
+      XUI_AMNEZIA_RUNTIME: "docker"
+      XUI_AMNEZIA_DOCKER_CONTAINER: "3xui_amneziawg"
+    restart: unless-stopped
+
   amneziawg:
     build:
       context: ./docker/amneziawg
@@ -11,6 +28,8 @@ services:
       - NET_ADMIN
       - SYS_MODULE
       - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
     sysctls:
       - net.ipv4.ip_forward=1
       - net.ipv4.conf.all.src_valid_mark=1
