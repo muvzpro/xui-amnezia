@@ -892,8 +892,8 @@ install_xui() {
         
         # Use default version if API is unavailable
         if [[ ! -n "$tag_version" ]]; then
-            echo -e "${yellow}GitHub API unavailable, using default version v1.1.2${plain}"
-            tag_version="v1.1.2"
+            echo -e "${yellow}GitHub API unavailable, using default version v1.1.3${plain}"
+            tag_version="v1.1.3"
         fi
         
         echo -e "Got x-ui latest version: ${tag_version}, beginning the installation..."
