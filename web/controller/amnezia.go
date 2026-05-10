@@ -43,6 +43,8 @@ func (a *AmneziaController) initRouter(g *gin.RouterGroup) {
     g.GET("/peers/:id/config", a.getPeerConfig)
     g.GET("/peers/:id/qrcode", a.getPeerQRCode)
     g.GET("/peers/:id/stats", a.getPeerStats)
+    g.GET("/peers/:id/vpnuri", a.getPeerVPNURI)
+    g.GET("/peers/:id/vpnuri-qrcode", a.getPeerVPNURICode)
 }
 
 func (a *AmneziaController) getServers(c *gin.Context) {
@@ -296,4 +298,36 @@ func (a *AmneziaController) extendPeer(c *gin.Context) {
         return
     }
     jsonObj(c, gin.H{"extended": id, "days": req.Days}, nil)
+}
+
+// getPeerVPNURI returns the vpn:// URI for Amnezia VPN app import
+// This is a killer-feature for Amnezia - allows one-click import
+func (a *AmneziaController) getPeerVPNURI(c *gin.Context) {
+    id, err := strconv.Atoi(c.Param("id"))
+    if err != nil {
+        jsonMsg(c, "Invalid peer ID", err)
+        return
+    }
+    vpnURI, err := a.amneziaService.GetPeerVPNURI(id)
+    if err != nil {
+        jsonMsg(c, "Failed to generate vpn:// URI", err)
+        return
+    }
+    jsonObj(c, gin.H{"vpnUri": vpnURI}, nil)
+}
+
+// getPeerVPNURICode returns a QR code for the vpn:// URI
+// Use this for mobile app import via camera scan
+func (a *AmneziaController) getPeerVPNURICode(c *gin.Context) {
+    id, err := strconv.Atoi(c.Param("id"))
+    if err != nil {
+        jsonMsg(c, "Invalid peer ID", err)
+        return
+    }
+    qr, err := a.amneziaService.GetPeerVPNURICode(id)
+    if err != nil {
+        jsonMsg(c, "Failed to generate vpn:// URI QR code", err)
+        return
+    }
+    jsonObj(c, gin.H{"qr": qr}, nil)
 }

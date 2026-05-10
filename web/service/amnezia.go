@@ -1,6 +1,8 @@
 ﻿package service
 
 import (
+	"bytes"
+	"compress/zlib"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -278,47 +280,16 @@ func (s *AmneziaService) GetPeerConfig(peerId int) (string, error) {
         peer.Address = "10.0.0.2/32"
     }
 
-    builder := strings.Builder{}
-    builder.WriteString("[Interface]\n")
-    builder.WriteString(fmt.Sprintf("PrivateKey = %s\n", peer.PrivateKey))
-    if peer.Address != "" {
-        builder.WriteString(fmt.Sprintf("Address = %s\n", peer.Address))
-    }
-    if server.DNS != "" {
-        builder.WriteString(fmt.Sprintf("DNS = %s\n", server.DNS))
-    }
-    if server.MTU > 0 {
-        builder.WriteString(fmt.Sprintf("MTU = %d\n", server.MTU))
+    // Parse obfuscation parameters from server
+    obf := s.parseObfuscationStruct(server.ObfuscationJSON)
+
+    // Use template renderer instead of string concatenation
+    config, err := RenderClientConfig(peer, server, obf)
+    if err != nil {
+        return "", fmt.Errorf("failed to render client config: %w", err)
     }
 
-    // Add AmneziaWG 2.0 obfuscation parameters for client config
-    if server.ObfuscationJSON != "" && server.ObfuscationJSON != "{}" {
-        builder.WriteString("\n# AmneziaWG 2.0 Obfuscation Parameters\n")
-        obfParams := s.parseObfuscationParams(server.ObfuscationJSON)
-        for key, value := range obfParams {
-            builder.WriteString(fmt.Sprintf("%s = %v\n", key, value))
-        }
-    }
-
-    builder.WriteString("\n[Peer]\n")
-    builder.WriteString(fmt.Sprintf("PublicKey = %s\n", server.PublicKey))
-    if peer.PresharedKey != "" {
-        builder.WriteString(fmt.Sprintf("PresharedKey = %s\n", peer.PresharedKey))
-    }
-    endpoint := peer.Endpoint
-    if endpoint == "" {
-        endpoint = server.Endpoint
-    }
-    if endpoint != "" {
-        builder.WriteString(fmt.Sprintf("Endpoint = %s\n", endpoint))
-    }
-    if peer.AllowedIPs != "" {
-        builder.WriteString(fmt.Sprintf("AllowedIPs = %s\n", peer.AllowedIPs))
-    }
-    if peer.PersistentKeepalive > 0 {
-        builder.WriteString(fmt.Sprintf("PersistentKeepalive = %d\n", peer.PersistentKeepalive))
-    }
-    return builder.String(), nil
+    return config, nil
 }
 
 func (s *AmneziaService) GetPeerQRCode(peerId int) (string, error) {
@@ -489,7 +460,21 @@ func (s *AmneziaService) RebuildServerConfig(serverId int) error {
         return fmt.Errorf("failed to get active peers: %w", err)
     }
 
-    config := s.generateServerConfig(server, peers)
+    // Parse obfuscation parameters from JSON
+    obf := s.parseObfuscationStruct(server.ObfuscationJSON)
+
+    // Validate AWG 2.0 parameters before generating config
+    if err := s.ValidateAwg20Params(obf); err != nil {
+        // Generate valid parameters if validation fails
+        obf, _ = s.GenerateValidatedObfuscationParams()
+    }
+
+    // Use template renderer instead of string concatenation
+    config, err := RenderServerConfig(server, peers, obf)
+    if err != nil {
+        return fmt.Errorf("failed to render server config: %w", err)
+    }
+
     // Use /etc/amnezia/amneziawg/ directory for AmneziaWG configs
     configPath := fmt.Sprintf("/etc/amnezia/amneziawg/%s.conf", server.InterfaceName)
 
@@ -506,53 +491,102 @@ func (s *AmneziaService) RebuildServerConfig(serverId int) error {
     return nil
 }
 
-// generateServerConfig creates the AmneziaWG server configuration string
-func (s *AmneziaService) generateServerConfig(server *model.AmneziaServer, peers []model.AmneziaPeer) string {
-    var builder strings.Builder
-
-    // [Interface] section
-    builder.WriteString("[Interface]\n")
-    builder.WriteString(fmt.Sprintf("PrivateKey = %s\n", server.PrivateKey))
-    builder.WriteString(fmt.Sprintf("Address = %s\n", server.Address))
-    builder.WriteString(fmt.Sprintf("ListenPort = %d\n", server.ListenPort))
-
-    if server.DNS != "" {
-        builder.WriteString(fmt.Sprintf("DNS = %s\n", server.DNS))
-    }
-    if server.MTU > 0 {
-        builder.WriteString(fmt.Sprintf("MTU = %d\n", server.MTU))
+// parseObfuscationStruct parses JSON obfuscation params into AmneziaObfuscation struct
+func (s *AmneziaService) parseObfuscationStruct(jsonStr string) *model.AmneziaObfuscation {
+    obf := &model.AmneziaObfuscation{}
+    if jsonStr == "" || jsonStr == "{}" {
+        // Return default values
+        return s.GenerateObfuscationParams()
     }
 
-    // AmneziaWG 2.0 obfuscation parameters (from ObfuscationJSON)
-    // These are stored as JSON and parsed for the config
-    if server.ObfuscationJSON != "" && server.ObfuscationJSON != "{}" {
-        builder.WriteString("\n# AmneziaWG 2.0 Obfuscation Parameters\n")
-        // Parse and add obfuscation parameters
-        obfParams := s.parseObfuscationParams(server.ObfuscationJSON)
-        for key, value := range obfParams {
-            builder.WriteString(fmt.Sprintf("%s = %v\n", key, value))
+    params := make(map[string]interface{})
+    if err := json.Unmarshal([]byte(jsonStr), &params); err != nil {
+        return s.GenerateObfuscationParams()
+    }
+
+    // Parse each field
+    if v, ok := params["Jc"]; ok {
+        if f, ok := v.(float64); ok {
+            obf.Jc = int(f)
+        }
+    }
+    if v, ok := params["Jmin"]; ok {
+        if f, ok := v.(float64); ok {
+            obf.Jmin = int(f)
+        }
+    }
+    if v, ok := params["Jmax"]; ok {
+        if f, ok := v.(float64); ok {
+            obf.Jmax = int(f)
+        }
+    }
+    if v, ok := params["S1"]; ok {
+        if f, ok := v.(float64); ok {
+            obf.S1 = int(f)
+        }
+    }
+    if v, ok := params["S2"]; ok {
+        if f, ok := v.(float64); ok {
+            obf.S2 = int(f)
+        }
+    }
+    if v, ok := params["S3"]; ok {
+        if f, ok := v.(float64); ok {
+            obf.S3 = int(f)
+        }
+    }
+    if v, ok := params["S4"]; ok {
+        if f, ok := v.(float64); ok {
+            obf.S4 = int(f)
+        }
+    }
+    if v, ok := params["H1"]; ok {
+        if str, ok := v.(string); ok {
+            obf.H1 = str
+        }
+    }
+    if v, ok := params["H2"]; ok {
+        if str, ok := v.(string); ok {
+            obf.H2 = str
+        }
+    }
+    if v, ok := params["H3"]; ok {
+        if str, ok := v.(string); ok {
+            obf.H3 = str
+        }
+    }
+    if v, ok := params["H4"]; ok {
+        if str, ok := v.(string); ok {
+            obf.H4 = str
+        }
+    }
+    if v, ok := params["I1"]; ok {
+        if str, ok := v.(string); ok {
+            obf.I1 = str
+        }
+    }
+    if v, ok := params["I2"]; ok {
+        if str, ok := v.(string); ok {
+            obf.I2 = str
+        }
+    }
+    if v, ok := params["I3"]; ok {
+        if str, ok := v.(string); ok {
+            obf.I3 = str
+        }
+    }
+    if v, ok := params["I4"]; ok {
+        if str, ok := v.(string); ok {
+            obf.I4 = str
+        }
+    }
+    if v, ok := params["I5"]; ok {
+        if str, ok := v.(string); ok {
+            obf.I5 = str
         }
     }
 
-    // [Peer] sections for each active peer
-    for _, peer := range peers {
-        builder.WriteString("\n[Peer]\n")
-        builder.WriteString(fmt.Sprintf("# %s\n", peer.Name))
-        builder.WriteString(fmt.Sprintf("PublicKey = %s\n", peer.PublicKey))
-        if peer.PresharedKey != "" {
-            builder.WriteString(fmt.Sprintf("PresharedKey = %s\n", peer.PresharedKey))
-        }
-        if peer.Address != "" {
-            // Extract the IP without the CIDR for AllowedIPs
-            addr := peer.Address
-            if idx := strings.Index(addr, "/"); idx > 0 {
-                addr = addr[:idx]
-            }
-            builder.WriteString(fmt.Sprintf("AllowedIPs = %s/32\n", addr))
-        }
-    }
-
-    return builder.String()
+    return obf
 }
 
 // GenerateObfuscationParams creates random AmneziaWG 2.0 obfuscation parameters
@@ -637,4 +671,192 @@ func (s *AmneziaService) writeConfigFile(path, content string) error {
 
     _, err = file.WriteString(content)
     return err
+}
+
+// ValidateAwg20Params validates AmneziaWG 2.0 obfuscation parameters
+// Based on: https://github.com/bivlked/amneziawg-installer/blob/main/ADVANCED.en.md
+// Critical constraints:
+// - Jmax > Jmin (junk packet size range must be valid)
+// - S3, S4 >= 0 (required for AWG 2.0)
+// - H1-H4 ranges must not overlap
+// - H* values must be <= 2147483647 (max safe int32 for compatibility)
+// - S1 + 56 ≠ S2 (prevents init and response messages from having same size)
+func (s *AmneziaService) ValidateAwg20Params(obf *model.AmneziaObfuscation) error {
+    // Validate Jmax > Jmin
+    if obf.Jmax <= obf.Jmin {
+        return fmt.Errorf("Jmax (%d) must be greater than Jmin (%d)", obf.Jmax, obf.Jmin)
+    }
+
+    // Validate Jmin/Jmax ranges
+    if obf.Jmin < 0 || obf.Jmin > 1280 {
+        return fmt.Errorf("Jmin (%d) must be between 0 and 1280", obf.Jmin)
+    }
+    if obf.Jmax < 0 || obf.Jmax > 1280 {
+        return fmt.Errorf("Jmax (%d) must be between 0 and 1280", obf.Jmax)
+    }
+
+    // Validate Jc range
+    if obf.Jc < 1 || obf.Jc > 128 {
+        return fmt.Errorf("Jc (%d) must be between 1 and 128", obf.Jc)
+    }
+
+    // Validate S3 and S4 (required for AWG 2.0)
+    if obf.S3 < 0 {
+        return fmt.Errorf("S3 (%d) must be >= 0", obf.S3)
+    }
+    if obf.S4 < 0 {
+        return fmt.Errorf("S4 (%d) must be >= 0", obf.S4)
+    }
+
+    // Validate S1 + 56 ≠ S2 (prevents init and response messages from having same size)
+    if obf.S1+56 == obf.S2 {
+        return fmt.Errorf("S1 + 56 (%d) must not equal S2 (%d) - this would make init and response messages the same size", obf.S1+56, obf.S2)
+    }
+
+    // Validate H1-H4 ranges don't overlap
+    ranges := []string{obf.H1, obf.H2, obf.H3, obf.H4}
+    parsedRanges := make([][2]int, 0, 4)
+
+    for i, h := range ranges {
+        start, end, err := parseHeaderRange(h)
+        if err != nil {
+            return fmt.Errorf("H%d range parsing failed: %w", i+1, err)
+        }
+        // Validate max uint32/2 for safety (2147483647)
+        if start > 2147483647 || end > 2147483647 {
+            return fmt.Errorf("H%d range (%d-%d) exceeds maximum allowed value 2147483647", i+1, start, end)
+        }
+        parsedRanges = append(parsedRanges, [2]int{start, end})
+    }
+
+    // Check for overlapping ranges
+    for i := 0; i < len(parsedRanges); i++ {
+        for j := i + 1; j < len(parsedRanges); j++ {
+            if rangesOverlap(parsedRanges[i], parsedRanges[j]) {
+                return fmt.Errorf("H%d and H%d ranges overlap", i+1, j+1)
+            }
+        }
+    }
+
+    return nil
+}
+
+// parseHeaderRange parses a header range string like "100-200" or "150" (single value)
+func parseHeaderRange(s string) (start, end int, err error) {
+    s = strings.TrimSpace(s)
+    if s == "" {
+        return 0, 0, fmt.Errorf("empty range")
+    }
+
+    // Single value case
+    if !strings.Contains(s, "-") {
+        val, err := parseInt(s)
+        if err != nil {
+            return 0, 0, fmt.Errorf("invalid single value: %w", err)
+        }
+        return val, val, nil
+    }
+
+    // Range case
+    parts := strings.Split(s, "-")
+    if len(parts) != 2 {
+        return 0, 0, fmt.Errorf("invalid range format, expected 'start-end'")
+    }
+
+    start, err = parseInt(parts[0])
+    if err != nil {
+        return 0, 0, fmt.Errorf("invalid start: %w", err)
+    }
+    end, err = parseInt(parts[1])
+    if err != nil {
+        return 0, 0, fmt.Errorf("invalid end: %w", err)
+    }
+
+    if start > end {
+        return 0, 0, fmt.Errorf("start (%d) greater than end (%d)", start, end)
+    }
+
+    return start, end, nil
+}
+
+// parseInt parses an integer from a string
+func parseInt(s string) (int, error) {
+    s = strings.TrimSpace(s)
+    var val int
+    _, err := fmt.Sscanf(s, "%d", &val)
+    return val, err
+}
+
+// rangesOverlap checks if two ranges [a1, a2] and [b1, b2] overlap
+func rangesOverlap(a, b [2]int) bool {
+    return a[0] <= b[1] && b[0] <= a[1]
+}
+
+// GenerateValidatedObfuscationParams generates and validates AWG 2.0 parameters
+func (s *AmneziaService) GenerateValidatedObfuscationParams() (*model.AmneziaObfuscation, error) {
+    // Try up to 10 times to generate valid non-overlapping parameters
+    for i := 0; i < 10; i++ {
+        obf := s.GenerateObfuscationParams()
+        if err := s.ValidateAwg20Params(obf); err == nil {
+            return obf, nil
+        }
+    }
+    // Fallback to deterministic non-overlapping values
+    return &model.AmneziaObfuscation{
+        Jc:   5,
+        Jmin: 50,
+        Jmax: 200,
+        S1:   72,
+        S2:   56,  // S1 + 56 = 128 ≠ 56
+        S3:   32,
+        S4:   16,
+        H1:   "100000-200000",
+        H2:   "300000-400000",
+        H3:   "500000-600000",
+        H4:   "700000-800000",
+        I1:   "",
+        I2:   "",
+        I3:   "",
+        I4:   "",
+        I5:   "",
+    }, nil
+}
+
+// GetPeerVPNURI generates a vpn:// URI for Amnezia VPN app import
+// Based on: https://github.com/bivlked/amneziawg-installer/blob/main/ADVANCED.en.md
+// The URI format is: vpn://<base64-encoded-zlib-compressed-config>
+func (s *AmneziaService) GetPeerVPNURI(peerId int) (string, error) {
+    // Get the standard config first
+    config, err := s.GetPeerConfig(peerId)
+    if err != nil {
+        return "", err
+    }
+
+    // Compress with zlib and encode with base64
+    var buf bytes.Buffer
+    w := zlib.NewWriter(&buf)
+    if _, err := w.Write([]byte(config)); err != nil {
+        return "", fmt.Errorf("failed to compress config: %w", err)
+    }
+    if err := w.Close(); err != nil {
+        return "", fmt.Errorf("failed to close zlib writer: %w", err)
+    }
+
+    // Create vpn:// URI
+    encoded := base64.StdEncoding.EncodeToString(buf.Bytes())
+    return "vpn://" + encoded, nil
+}
+
+// GetPeerVPNURICode generates a QR code for the vpn:// URI
+func (s *AmneziaService) GetPeerVPNURICode(peerId int) (string, error) {
+    vpnURI, err := s.GetPeerVPNURI(peerId)
+    if err != nil {
+        return "", err
+    }
+
+    png, err := qrcode.Encode(vpnURI, qrcode.Medium, 256)
+    if err != nil {
+        return "", err
+    }
+    return "data:image/png;base64," + base64.StdEncoding.EncodeToString(png), nil
 }
