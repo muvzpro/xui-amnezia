@@ -880,41 +880,31 @@ config_after_install() {
 install_xui() {
     cd ${xui_folder%/x-ui}/
 
-    # Download resources from new repository
+    # Download resources from muvzpro/xui-amnezia repository only
     if [ $# == 0 ]; then
         tag_version=$(curl -Ls "https://api.github.com/repos/muvzpro/xui-amnezia/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-        
-        # If no releases in muvzpro/xui-amnezia, try original 3x-ui releases
-        if [[ ! -n "$tag_version" ]]; then
-            echo -e "${yellow}No releases found in muvzpro/xui-amnezia, trying original 3x-ui releases...${plain}"
-            tag_version=$(curl -Ls "https://api.github.com/repos/MHSanaei/3x-ui/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-        fi
         
         if [[ ! -n "$tag_version" ]]; then
             echo -e "${yellow}Trying to fetch version with IPv4...${plain}"
             tag_version=$(curl -4 -Ls "https://api.github.com/repos/muvzpro/xui-amnezia/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-            
-            if [[ ! -n "$tag_version" ]]; then
-                tag_version=$(curl -4 -Ls "https://api.github.com/repos/MHSanaei/3x-ui/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-            fi
-            
-            if [[ ! -n "$tag_version" ]]; then
-                echo -e "${yellow}GitHub API unavailable, using default version v1.1.0${plain}"
-                tag_version="v1.1.0"
-            fi
         fi
+        
+        # Use default version if API is unavailable
+        if [[ ! -n "$tag_version" ]]; then
+            echo -e "${yellow}GitHub API unavailable, using default version v1.1.0${plain}"
+            tag_version="v1.1.0"
+        fi
+        
         echo -e "Got x-ui latest version: ${tag_version}, beginning the installation..."
         
-        # Try downloading from muvzpro/xui-amnezia first
-        curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz https://github.com/muvzpro/xui-amnezia/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz 2>/dev/null
+        # Download from muvzpro/xui-amnezia only
+        curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz https://github.com/muvzpro/xui-amnezia/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz
         if [[ $? -ne 0 ]]; then
-            echo -e "${yellow}Download from muvzpro/xui-amnezia failed, trying MHSanaei/3x-ui...${plain}"
-            curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz https://github.com/MHSanaei/3x-ui/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz
-            if [[ $? -ne 0 ]]; then
-                echo -e "${red}Downloading x-ui failed from both repositories${plain}"
-                echo -e "${red}Please ensure your server can access GitHub${plain}"
-                exit 1
-            fi
+            echo -e "${red}Downloading x-ui failed from muvzpro/xui-amnezia${plain}"
+            echo -e "${red}Please ensure your server can access GitHub${plain}"
+            echo -e "${yellow}You may need to manually download the release from:${plain}"
+            echo -e "${green}https://github.com/muvzpro/xui-amnezia/releases${plain}"
+            exit 1
         fi
     else
         tag_version=$1
@@ -922,13 +912,8 @@ install_xui() {
         echo -e "Beginning to install x-ui $1"
         curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz ${url}
         if [[ $? -ne 0 ]]; then
-            echo -e "${yellow}Download from muvzpro/xui-amnezia failed, trying MHSanaei/3x-ui...${plain}"
-            url="https://github.com/MHSanaei/3x-ui/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz"
-            curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz ${url}
-            if [[ $? -ne 0 ]]; then
-                echo -e "${red}Download x-ui $1 failed from both repositories${plain}"
-                exit 1
-            fi
+            echo -e "${red}Download x-ui $1 failed from muvzpro/xui-amnezia${plain}"
+            exit 1
         fi
     fi
     
