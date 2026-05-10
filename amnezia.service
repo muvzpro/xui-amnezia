@@ -1,0 +1,14 @@
+[Unit]
+Description=AmneziaWG VPN Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/wg-quick up /etc/amnezia/amnezia.conf
+ExecStop=/usr/bin/wg-quick down /etc/amnezia/amnezia.conf
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

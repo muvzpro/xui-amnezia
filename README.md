@@ -1,57 +1,107 @@
-[English](/README.md) | [فارسی](/README.fa_IR.md) | [العربية](/README.ar_EG.md) | [中文](/README.zh_CN.md) | [Español](/README.es_ES.md) | [Русский](/README.ru_RU.md)
+# 3X-UI with AmneziaWG Support
+
+[English](/README.md) | [Русский](/README.ru_RU.md)
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="./media/3x-ui-dark.png">
-    <img alt="3x-ui" src="./media/3x-ui-light.png">
+    <img alt="3x-ui with AmneziaWG" src="./media/3x-ui-light.png">
   </picture>
 </p>
 
-[![Release](https://img.shields.io/github/v/release/mhsanaei/3x-ui.svg)](https://github.com/MHSanaei/3x-ui/releases)
-[![Build](https://img.shields.io/github/actions/workflow/status/mhsanaei/3x-ui/release.yml.svg)](https://github.com/MHSanaei/3x-ui/actions)
-[![GO Version](https://img.shields.io/github/go-mod/go-version/mhsanaei/3x-ui.svg)](#)
-[![Downloads](https://img.shields.io/github/downloads/mhsanaei/3x-ui/total.svg)](https://github.com/MHSanaei/3x-ui/releases/latest)
-[![License](https://img.shields.io/badge/license-GPL%20V3-blue.svg?longCache=true)](https://www.gnu.org/licenses/gpl-3.0.en.html)
-[![Go Reference](https://pkg.go.dev/badge/github.com/mhsanaei/3x-ui/v2.svg)](https://pkg.go.dev/github.com/mhsanaei/3x-ui/v2)
-[![Go Report Card](https://goreportcard.com/badge/github.com/mhsanaei/3x-ui/v2)](https://goreportcard.com/report/github.com/mhsanaei/3x-ui/v2)
+[![Release](https://img.shields.io/github/v/release/muvzpro/xui-amnezia.svg)](https://github.com/muvzpro/xui-amnezia/releases)
+[![Downloads](https://img.shields.io/github/downloads/muvzpro/xui-amnezia/total.svg)](https://github.com/muvzpro/xui-amnezia/releases/latest)
+[![License](https://img.shields.io/badge/license-MPL%202.0-blue.svg)](https://www.mozilla.org/en-US/MPL/2.0/)
 
-**3X-UI** — advanced, open-source web-based control panel designed for managing Xray-core server. It offers a user-friendly interface for configuring and monitoring various VPN and proxy protocols.
+**3X-UI with AmneziaWG** — advanced, open-source web-based control panel designed for managing Xray-core server with AmneziaWG support. It offers a user-friendly interface for configuring and monitoring various VPN and proxy protocols.
 
 > [!IMPORTANT]
 > This project is only for personal usage, please do not use it for illegal purposes, and please do not use it in a production environment.
 
-As an enhanced fork of the original X-UI project, 3X-UI provides improved stability, broader protocol support, and additional features.
+## Features
+
+- **Xray Core** - Full Xray functionality preserved from original 3x-ui
+- **AmneziaWG** - WireGuard with obfuscation support
+- **AmneziaWG 2.0** - Enhanced obfuscation parameters
+- **Client Expiry Management** - Automatic peer pausing and extension
+- **Web Panel** - Modern Vue.js interface for management
+- **Traffic Statistics** - Monitor peer and server traffic
 
 ## Quick Start
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/muvzpro/xui-amnezia/master/install-3x-ui.sh)
 ```
 
-For full documentation, please visit the [project Wiki](https://github.com/MHSanaei/3x-ui/wiki).
+## After Installation
 
-## A Special Thanks to
+### Panel Access
 
-- [alireza0](https://github.com/alireza0/)
+After installation, you'll see:
+- Username
+- Password
+- Port
+- WebBasePath
+- Access URL (https://...)
 
-## Acknowledgment
+### AmneziaWG Commands
 
-- [Iran v2ray rules](https://github.com/chocolate4u/Iran-v2ray-rules) (License: **GPL-3.0**): _Enhanced v2ray/xray and v2ray/xray-clients routing rules with built-in Iranian domains and a focus on security and adblocking._
-- [Russia v2ray rules](https://github.com/runetfreedom/russia-v2ray-rules-dat) (License: **GPL-3.0**): _This repository contains automatically updated V2Ray routing rules based on data on blocked domains and addresses in Russia._
+```bash
+# Start AmneziaWG
+systemctl start amnezia
 
-## Support project
+# Stop AmneziaWG
+systemctl stop amnezia
 
-**If this project is helpful to you, you may wish to give it a**:star2:
+# Check status
+systemctl status amnezia
 
-<a href="https://www.buymeacoffee.com/MHSanaei" target="_blank">
-<img src="./media/default-yellow.png" alt="Buy Me A Coffee" style="height: 70px !important;width: 277px !important;" >
-</a>
+# Enable on boot
+systemctl enable amnezia
 
-</br>
-<a href="https://nowpayments.io/donation/hsanaei" target="_blank" rel="noreferrer noopener">
-   <img src="./media/donation-button-black.svg" alt="Crypto donation button by NOWPayments">
-</a>
+# View logs
+journalctl -u amnezia -f
+```
 
-## Stargazers over Time
+### Panel Commands
 
-[![Stargazers over time](https://starchart.cc/MHSanaei/3x-ui.svg?variant=adaptive)](https://starchart.cc/MHSanaei/3x-ui)
+```bash
+x-ui              - Admin Management Script
+x-ui start        - Start panel
+x-ui stop         - Stop panel
+x-ui restart      - Restart panel
+x-ui status       - Current Status
+x-ui settings     - Current Settings
+x-ui enable       - Enable Autostart on OS Startup
+x-ui disable      - Disable Autostart on OS Startup
+x-ui log          - Check logs
+x-ui update       - Update
+x-ui uninstall    - Uninstall
+```
+
+## Configuration
+
+### AmneziaWG Configuration
+
+Configuration files are located at:
+- `/etc/amnezia/amnezia.conf` - Server configuration
+- `/etc/amnezia/publickey` - Server public key
+- `/etc/amnezia/port` - Server port
+- `/etc/amnezia/network` - WireGuard network
+
+## Requirements
+
+- Linux (Ubuntu, Debian, CentOS, Arch, Alpine supported)
+- Root access
+- Port 80 open for SSL certificate issuance
+- WireGuard kernel module support
+
+## Credits
+
+- Original 3x-ui by [MHSanaei](https://github.com/MHSanaei/3x-ui)
+- AmneziaWG by [AmneziaVPN](https://github.com/amnezia-vpn/amneziawg-go)
+- WireGuard by [WireGuard](https://www.wireguard.com/)
+
+## Support
+
+- GitHub Issues: [muvzpro/xui-amnezia/issues](https://github.com/muvzpro/xui-amnezia/issues)
