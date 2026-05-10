@@ -799,30 +799,33 @@ install_x-ui() {
 
     # Download resources from muvzpro/xui-amnezia repository
     if [ $# == 0 ]; then
-        # Try to get latest version from GitHub API
-        tag_version=$(curl -Ls "https://api.github.com/repos/muvzpro/xui-amnezia/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-        if [[ ! -n "$tag_version" ]]; then
-            echo -e "${yellow}Trying to fetch version with IPv4...${plain}"
-            tag_version=$(curl -4 -Ls "https://api.github.com/repos/muvzpro/xui-amnezia/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        # Default version - always use this for AmneziaWG fork
+        tag_version="v1.1.0"
+        
+        # Try to get latest version from GitHub API (optional)
+        latest_version=$(curl -Ls "https://api.github.com/repos/muvzpro/xui-amnezia/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        if [[ -n "$latest_version" ]]; then
+            tag_version="$latest_version"
+            echo -e "${green}Found latest release: ${tag_version}${plain}"
+        else
+            echo -e "${yellow}GitHub API unavailable, using release: ${tag_version}${plain}"
+            echo -e "${yellow}Download URL: https://github.com/muvzpro/xui-amnezia/releases/tag/${tag_version}${plain}"
         fi
-        # Fallback: use hardcoded latest version if API is unavailable
-        if [[ ! -n "$tag_version" ]]; then
-            echo -e "${yellow}GitHub API unavailable, using default version v1.1.0${plain}"
-            tag_version="v1.1.0"
-        fi
-        echo -e "Got x-ui latest version: ${tag_version}, beginning the installation..."
+        
+        echo -e "Installing x-ui ${tag_version}..."
         curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz https://github.com/muvzpro/xui-amnezia/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz
         if [[ $? -ne 0 ]]; then
-            echo -e "${red}Downloading x-ui failed, please be sure that your server can access GitHub ${plain}"
+            echo -e "${red}Downloading x-ui failed, please be sure that your server can access GitHub${plain}"
+            echo -e "${yellow}Manual download: https://github.com/muvzpro/xui-amnezia/releases/tag/${tag_version}${plain}"
             exit 1
         fi
     else
         tag_version=$1
         url="https://github.com/muvzpro/xui-amnezia/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz"
-        echo -e "Beginning to install x-ui $1"
+        echo -e "Beginning to install x-ui ${tag_version}"
         curl -4fLRo ${xui_folder}-linux-$(arch).tar.gz ${url}
         if [[ $? -ne 0 ]]; then
-            echo -e "${red}Download x-ui $1 failed, please check if the version exists ${plain}"
+            echo -e "${red}Download x-ui ${tag_version} failed, please check if the version exists${plain}"
             exit 1
         fi
     fi
