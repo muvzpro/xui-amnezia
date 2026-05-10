@@ -47,20 +47,26 @@ After installation, you'll see:
 ### AmneziaWG Commands
 
 ```bash
-# Start AmneziaWG
-systemctl start amnezia
+# Start AmneziaWG interface awg0
+systemctl start amneziawg@awg0
 
 # Stop AmneziaWG
-systemctl stop amnezia
+systemctl stop amneziawg@awg0
 
 # Check status
-systemctl status amnezia
+systemctl status amneziawg@awg0
 
 # Enable on boot
-systemctl enable amnezia
+systemctl enable amneziawg@awg0
 
 # View logs
-journalctl -u amnezia -f
+journalctl -u amneziawg@awg0 -f
+
+# Show AmneziaWG interfaces
+awg show
+
+# Show specific interface
+awg show awg0
 ```
 
 ### Panel Commands
@@ -84,17 +90,27 @@ x-ui uninstall    - Uninstall
 ### AmneziaWG Configuration
 
 Configuration files are located at:
-- `/etc/amnezia/amnezia.conf` - Server configuration
-- `/etc/amnezia/publickey` - Server public key
-- `/etc/amnezia/port` - Server port
-- `/etc/amnezia/network` - WireGuard network
+- `/etc/amnezia/amneziawg/awg0.conf` - Server configuration
+- `/etc/amnezia/amneziawg/publickey` - Server public key
+- `/etc/amnezia/amneziawg/privatekey` - Server private key (keep secure!)
+- `/etc/amnezia/amneziawg/port` - Server port
+- `/etc/amnezia/amneziawg/network` - AmneziaWG network
+
+### AmneziaWG 2.0 Obfuscation Parameters
+
+The configuration includes these obfuscation parameters to bypass DPI:
+- `Jc` - Junk packet count
+- `Jmin`, `Jmax` - Junk packet size range
+- `S1`, `S2` - Initiation packet junk sizes
+- `H1`, `H2`, `H3`, `H4` - Response packet junk sizes
 
 ## Requirements
 
 - Linux (Ubuntu, Debian, CentOS, Arch, Alpine supported)
 - Root access
 - Port 80 open for SSL certificate issuance
-- WireGuard kernel module support
+- Go 1.21+ (for building AmneziaWG)
+- Git, Make, GCC (for building from source)
 
 ## Credits
 

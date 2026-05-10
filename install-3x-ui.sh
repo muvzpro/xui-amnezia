@@ -18,8 +18,10 @@ RELEASE_URL="https://api.github.com/repos/muvzpro/xui-amnezia/releases/latest"
 
 xui_folder="${XUI_MAIN_FOLDER:=/usr/local/x-ui}"
 xui_service="${XUI_SERVICE:=/etc/systemd/system}"
-amnezia_folder="/etc/amnezia"
-amnezia_service="/etc/systemd/system/amnezia.service"
+amnezia_folder="/etc/amnezia/amneziawg"
+amneziawg_bin="/usr/local/bin/amneziawg-go"
+awg_bin="/usr/local/bin/awg"
+awg_quick_bin="/usr/local/bin/awg-quick"
 
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}Fatal error: ${plain} Please run this script with root privilege \n " && exit 1
@@ -84,34 +86,40 @@ is_port_in_use() {
 }
 
 install_base() {
+    echo -e "${green}Installing base packages...${plain}"
     case "${release}" in
         ubuntu | debian | armbian)
-            apt-get update && apt-get install -y -q cron curl tar tzdata socat ca-certificates openssl wireguard-tools qrencode
+            apt-get update && apt-get install -y -q cron curl tar tzdata socat ca-certificates openssl \
+                git make gcc golang-go qrencode iproute2 iptables
             ;;
         fedora | amzn | virtuozzo | rhel | almalinux | rocky | ol)
-            dnf -y update && dnf install -y -q cronie curl tar tzdata socat ca-certificates openssl wireguard-tools qrencode
+            dnf -y update && dnf install -y -q cronie curl tar tzdata socat ca-certificates openssl \
+                git make gcc golang qrencode iproute iptables
             ;;
         centos)
             if [[ "${VERSION_ID}" =~ ^7 ]]; then
-                yum -y update && yum install -y cronie curl tar tzdata socat ca-certificates openssl
-                # WireGuard for CentOS 7
-                yum install -y epel-release
-                yum install -y wireguard-tools qrencode
+                yum -y update && yum install -y cronie curl tar tzdata socat ca-certificates openssl \
+                    git make gcc golang qrencode iproute iptables
             else
-                dnf -y update && dnf install -y -q cronie curl tar tzdata socat ca-certificates openssl wireguard-tools qrencode
+                dnf -y update && dnf install -y -q cronie curl tar tzdata socat ca-certificates openssl \
+                    git make gcc golang qrencode iproute iptables
             fi
             ;;
         arch | manjaro | parch)
-            pacman -Syu && pacman -Syu --noconfirm cronie curl tar tzdata socat ca-certificates openssl wireguard-tools qrencode
+            pacman -Syu && pacman -Syu --noconfirm cronie curl tar tzdata socat ca-certificates openssl \
+                git make gcc go qrencode iproute2 iptables
             ;;
         opensuse-tumbleweed | opensuse-leap)
-            zypper refresh && zypper -q install -y cron curl tar timezone socat ca-certificates openssl wireguard-tools qrencode
+            zypper refresh && zypper -q install -y cron curl tar timezone socat ca-certificates openssl \
+                git make gcc go qrencode iproute2 iptables
             ;;
         alpine)
-            apk update && apk add dcron curl tar tzdata socat ca-certificates openssl wireguard-tools qrencode
+            apk update && apk add dcron curl tar tzdata socat ca-certificates openssl \
+                git make gcc go qrencode iproute2 iptables
             ;;
         *)
-            apt-get update && apt-get install -y -q cron curl tar tzdata socat ca-certificates openssl wireguard-tools qrencode
+            apt-get update && apt-get install -y -q cron curl tar tzdata socat ca-certificates openssl \
+                git make gcc golang-go qrencode iproute2 iptables
             ;;
     esac
 }
@@ -136,57 +144,114 @@ install_acme() {
     return 0
 }
 
-# Install WireGuard kernel module if needed
-install_wireguard_kernel() {
-    echo -e "${green}Checking WireGuard kernel module...${plain}"
+# Install AmneziaWG (amneziawg-go and amneziawg-tools)
+install_amneziawg() {
+    echo -e "${green}Installing AmneziaWG...${plain}"
     
-    # Check if WireGuard module is already loaded
-    if modprobe -n wireguard 2>/dev/null; then
-        echo -e "${green}WireGuard kernel module is available${plain}"
+    # Check if already installed
+    if command -v awg &> /dev/null && command -v awg-quick &> /dev/null && command -v amneziawg-go &> /dev/null; then
+        echo -e "${green}AmneziaWG is already installed${plain}"
+        awg --version 2>/dev/null || true
         return 0
     fi
     
-    echo -e "${yellow}Installing WireGuard kernel module...${plain}"
+    # Create build directory
+    mkdir -p /opt/amneziawg-build
+    cd /opt/amneziawg-build
     
-    case "${release}" in
-        ubuntu | debian | armbian)
-            apt-get install -y wireguard
-            ;;
-        fedora | amzn | virtuozzo | rhel | almalinux | rocky | ol)
-            dnf install -y wireguard
-            ;;
-        centos)
-            if [[ "${VERSION_ID}" =~ ^7 ]]; then
-                yum install -y epel-release
-                yum install -y wireguard
-            else
-                dnf install -y wireguard
-            fi
-            ;;
-        arch | manjaro | parch)
-            pacman -Syu --noconfirm wireguard
-            ;;
-        opensuse-tumbleweed | opensuse-leap)
-            zypper install -y wireguard
-            ;;
-        alpine)
-            apk add wireguard
-            ;;
-    esac
+    # Install amneziawg-go (userspace implementation)
+    echo -e "${yellow}Building amneziawg-go...${plain}"
+    if [ ! -d "amneziawg-go" ]; then
+        git clone https://github.com/amnezia-vpn/amneziawg-go.git
+    fi
+    cd amneziawg-go
     
-    # Try to load module
-    modprobe wireguard 2>/dev/null || true
+    # Build with Go
+    export CGO_ENABLED=0
+    go build -ldflags="-s -w" -o amneziawg-go
+    if [ $? -ne 0 ]; then
+        echo -e "${red}Failed to build amneziawg-go${plain}"
+        exit 1
+    fi
+    install -m 755 amneziawg-go ${amneziawg_bin}
+    echo -e "${green}amneziawg-go installed to ${amneziawg_bin}${plain}"
     
-    echo -e "${green}WireGuard kernel module installed${plain}"
+    # Install amneziawg-tools (awg, awg-quick)
+    echo -e "${yellow}Building amneziawg-tools...${plain}"
+    cd /opt/amneziawg-build
+    if [ ! -d "amneziawg-tools" ]; then
+        git clone https://github.com/amnezia-vpn/amneziawg-tools.git
+    fi
+    cd amneziawg-tools/src
+    
+    # Build tools
+    make
+    if [ $? -ne 0 ]; then
+        echo -e "${red}Failed to build amneziawg-tools${plain}"
+        exit 1
+    fi
+    make install
+    echo -e "${green}amneziawg-tools installed${plain}"
+    
+    # Verify installation
+    cd ~
+    if ! command -v awg &> /dev/null; then
+        echo -e "${red}awg command not found after installation${plain}"
+        exit 1
+    fi
+    if ! command -v awg-quick &> /dev/null; then
+        echo -e "${red}awg-quick command not found after installation${plain}"
+        exit 1
+    fi
+    if [ ! -f "${amneziawg_bin}" ]; then
+        echo -e "${red}amneziawg-go binary not found after installation${plain}"
+        exit 1
+    fi
+    
+    echo -e "${green}AmneziaWG installed successfully!${plain}"
+    echo -e "  ${green}awg: $(command -v awg)${plain}"
+    echo -e "  ${green}awg-quick: $(command -v awg-quick)${plain}"
+    echo -e "  ${green}amneziawg-go: ${amneziawg_bin}${plain}"
+    
+    # Cleanup build directory
+    rm -rf /opt/amneziawg-build
 }
 
-# Generate WireGuard server keys
-generate_wg_keys() {
-    local private_key=$(wg genkey)
-    local public_key=$(echo "$private_key" | wg pubkey)
+# Generate AmneziaWG server keys using awg
+generate_awg_keys() {
+    local private_key=$(awg genkey)
+    local public_key=$(echo "$private_key" | awg pubkey)
     
     echo "$private_key"
     echo "$public_key"
+}
+
+# Generate AmneziaWG 2.0 obfuscation parameters
+generate_obfuscation_params() {
+    # AmneziaWG 2.0 recommended parameters
+    # Jc: Junk packet count (1-5)
+    # Jmin-Jmax: Junk packet size range
+    # S1, S2: Initiation packet junk sizes
+    # H1-H4: Response packet junk sizes
+    local Jc=$((RANDOM % 5 + 1))
+    local Jmin=$((RANDOM % 50 + 50))
+    local Jmax=$((RANDOM % 500 + 500))
+    local S1=$((RANDOM % 15 + 15))
+    local S2=$((RANDOM % 15 + 15))
+    local H1=$((RANDOM % 15 + 15))
+    local H2=$((RANDOM % 15 + 15))
+    local H3=$((RANDOM % 15 + 15))
+    local H4=$((RANDOM % 15 + 15))
+    
+    echo "Jc = ${Jc}"
+    echo "Jmin = ${Jmin}"
+    echo "Jmax = ${Jmax}"
+    echo "S1 = ${S1}"
+    echo "S2 = ${S2}"
+    echo "H1 = ${H1}"
+    echo "H2 = ${H2}"
+    echo "H3 = ${H3}"
+    echo "H4 = ${H4}"
 }
 
 # Setup AmneziaWG configuration directory
@@ -196,32 +261,39 @@ setup_amnezia_config() {
     mkdir -p ${amnezia_folder}
     mkdir -p ${amnezia_folder}/peers
     
-    # Generate server keys
-    local keys=$(generate_wg_keys)
+    # Generate server keys using awg
+    local keys=$(generate_awg_keys)
     local private_key=$(echo "$keys" | head -n1)
     local public_key=$(echo "$keys" | tail -n1)
     
     # Generate random server port if not specified
     local wg_port=$(shuf -i 1024-62000 -n 1)
     
-    # Generate random network for WireGuard
+    # Generate random network for AmneziaWG
     local wg_network="10.$(shuf -i 0-255 -n 1).$(shuf -i 0-255 -n 1).0"
     
-    # Create server config template
-    cat > ${amnezia_folder}/amnezia.conf << EOF
+    # Generate obfuscation parameters for AmneziaWG 2.0
+    local obf_params=$(generate_obfuscation_params)
+    
+    # Create server config file
+    cat > ${amnezia_folder}/awg0.conf << EOF
 # AmneziaWG Server Configuration
 # Generated by 3X-UI Amnezia installer
+# Interface: awg0
 
 [Interface]
 PrivateKey = ${private_key}
-Address = ${wg_network}/24
+Address = ${wg_network}.1/24
 ListenPort = ${wg_port}
 SaveConfig = false
 
-# AmneziaWG obfuscation parameters (AmneziaWG 2.0)
-# These can be adjusted via the web panel
+# AmneziaWG 2.0 Obfuscation Parameters
+# These help bypass DPI detection
 EOF
 
+    # Add obfuscation parameters
+    echo "$obf_params" >> ${amnezia_folder}/awg0.conf
+    
     # Save public key for reference
     echo "${public_key}" > ${amnezia_folder}/publickey
     
@@ -231,40 +303,104 @@ EOF
     # Save network for reference
     echo "${wg_network}" > ${amnezia_folder}/network
     
-    echo -e "${green}AmneziaWG configuration created:${plain}"
-    echo -e "  ${green}Port: ${wg_port}${plain}"
-    echo -e "  ${green}Network: ${wg_network}/24${plain}"
-    echo -e "  ${green}Public Key: ${public_key}${plain}"
+    # Save private key securely
+    echo "${private_key}" > ${amnezia_folder}/privatekey
+    chmod 600 ${amnezia_folder}/privatekey
     
-    chmod 600 ${amnezia_folder}/amnezia.conf
-    chmod 600 ${amnezia_folder}/privatekey 2>/dev/null || true
+    echo -e "${green}AmneziaWG configuration created:${plain}"
+    echo -e "  ${green}Interface: awg0${plain}"
+    echo -e "  ${green}Port: ${wg_port}${plain}"
+    echo -e "  ${green}Network: ${wg_network}.0/24${plain}"
+    echo -e "  ${green}Public Key: ${public_key}${plain}"
+    echo -e "  ${green}Config: ${amnezia_folder}/awg0.conf${plain}"
+    
+    chmod 600 ${amnezia_folder}/awg0.conf
 }
 
 # Create systemd service for AmneziaWG
 create_amnezia_service() {
     echo -e "${green}Creating AmneziaWG systemd service...${plain}"
     
-    cat > ${amnezia_service} << 'EOF'
+    # Create amneziawg@.service template for multiple interfaces
+    cat > /etc/systemd/system/amneziawg@.service << 'EOF'
 [Unit]
-Description=AmneziaWG VPN Service
-After=network.target
-Wants=network.target
+Description=AmneziaWG interface %i
+After=network-online.target
+Wants=network-online.target
 
 [Service]
-Type=notify
-ExecStart=/usr/bin/wg-quick up /etc/amnezia/amnezia.conf
-ExecStop=/usr/bin/wg-quick down /etc/amnezia/amnezia.conf
-Restart=on-failure
-RestartSec=3
+Type=oneshot
+RemainAfterExit=yes
+Environment=WG_QUICK_USERSPACE_IMPLEMENTATION=/usr/local/bin/amneziawg-go
+ExecStart=/usr/local/bin/awg-quick up /etc/amnezia/amneziawg/%i.conf
+ExecStop=/usr/local/bin/awg-quick down /etc/amnezia/amneziawg/%i.conf
+ExecReload=/bin/bash -c '/usr/local/bin/awg-quick down /etc/amnezia/amneziawg/%i.conf; /usr/local/bin/awg-quick up /etc/amnezia/amneziawg/%i.conf'
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-    chmod 644 ${amnezia_service}
+    chmod 644 /etc/systemd/system/amneziawg@.service
     systemctl daemon-reload
     
-    echo -e "${green}AmneziaWG service created${plain}"
+    echo -e "${green}AmneziaWG systemd service created${plain}"
+    echo -e "  ${green}Service: amneziawg@awg0.service${plain}"
+    echo -e "  ${green}Config: ${amnezia_folder}/awg0.conf${plain}"
+}
+
+# Verify AmneziaWG installation
+verify_amneziawg_installation() {
+    echo -e "${green}Verifying AmneziaWG installation...${plain}"
+    
+    local errors=0
+    
+    # Check awg binary
+    if command -v awg &> /dev/null; then
+        echo -e "  ${green}✓ awg: $(command -v awg)${plain}"
+    else
+        echo -e "  ${red}✗ awg not found${plain}"
+        errors=$((errors + 1))
+    fi
+    
+    # Check awg-quick binary
+    if command -v awg-quick &> /dev/null; then
+        echo -e "  ${green}✓ awg-quick: $(command -v awg-quick)${plain}"
+    else
+        echo -e "  ${red}✗ awg-quick not found${plain}"
+        errors=$((errors + 1))
+    fi
+    
+    # Check amneziawg-go binary
+    if [ -f "${amneziawg_bin}" ]; then
+        echo -e "  ${green}✓ amneziawg-go: ${amneziawg_bin}${plain}"
+    else
+        echo -e "  ${red}✗ amneziawg-go not found${plain}"
+        errors=$((errors + 1))
+    fi
+    
+    # Check config file
+    if [ -f "${amnezia_folder}/awg0.conf" ]; then
+        echo -e "  ${green}✓ Config: ${amnezia_folder}/awg0.conf${plain}"
+    else
+        echo -e "  ${red}✗ Config file not found${plain}"
+        errors=$((errors + 1))
+    fi
+    
+    # Check systemd service
+    if [ -f "/etc/systemd/system/amneziawg@.service" ]; then
+        echo -e "  ${green}✓ Service: /etc/systemd/system/amneziawg@.service${plain}"
+    else
+        echo -e "  ${red}✗ Service file not found${plain}"
+        errors=$((errors + 1))
+    fi
+    
+    if [ $errors -gt 0 ]; then
+        echo -e "${red}AmneziaWG installation verification failed with ${errors} errors${plain}"
+        return 1
+    fi
+    
+    echo -e "${green}AmneziaWG installation verified successfully!${plain}"
+    return 0
 }
 
 setup_ssl_certificate() {
@@ -817,14 +953,17 @@ install_xui() {
     chmod +x /usr/bin/x-ui
     mkdir -p /var/log/x-ui
     
-    # Install WireGuard kernel module
-    install_wireguard_kernel
+    # Install AmneziaWG (amneziawg-go and amneziawg-tools)
+    install_amneziawg
     
     # Setup AmneziaWG configuration
     setup_amnezia_config
     
     # Create AmneziaWG systemd service
     create_amnezia_service
+    
+    # Verify AmneziaWG installation
+    verify_amneziawg_installation
     
     config_after_install
 

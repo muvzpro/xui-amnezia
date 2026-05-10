@@ -1,14 +1,15 @@
 [Unit]
-Description=AmneziaWG VPN Service
-After=network.target
-Wants=network.target
+Description=AmneziaWG interface %i
+After=network-online.target
+Wants=network-online.target
 
 [Service]
-Type=notify
-ExecStart=/usr/bin/wg-quick up /etc/amnezia/amnezia.conf
-ExecStop=/usr/bin/wg-quick down /etc/amnezia/amnezia.conf
-Restart=on-failure
-RestartSec=3
+Type=oneshot
+RemainAfterExit=yes
+Environment=WG_QUICK_USERSPACE_IMPLEMENTATION=/usr/local/bin/amneziawg-go
+ExecStart=/usr/local/bin/awg-quick up /etc/amnezia/amneziawg/%i.conf
+ExecStop=/usr/local/bin/awg-quick down /etc/amnezia/amneziawg/%i.conf
+ExecReload=/bin/bash -c '/usr/local/bin/awg-quick down /etc/amnezia/amneziawg/%i.conf; /usr/local/bin/awg-quick up /etc/amnezia/amneziawg/%i.conf'
 
 [Install]
 WantedBy=multi-user.target

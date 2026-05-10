@@ -490,7 +490,8 @@ func (s *AmneziaService) RebuildServerConfig(serverId int) error {
     }
 
     config := s.generateServerConfig(server, peers)
-    configPath := fmt.Sprintf("/etc/amnezia/%s.conf", server.InterfaceName)
+    // Use /etc/amnezia/amneziawg/ directory for AmneziaWG configs
+    configPath := fmt.Sprintf("/etc/amnezia/amneziawg/%s.conf", server.InterfaceName)
 
     if err := s.writeConfigFile(configPath, config); err != nil {
         return fmt.Errorf("failed to write config: %w", err)
